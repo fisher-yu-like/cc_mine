@@ -28,11 +28,87 @@ PROMPT = "\033[36ms20 >> \033[0m"
 CLI_ACTIVE = False
 MAILBOX_DIR = WORKDIR / ".mailboxes"
 WORKTREES_DIR = WORKDIR / ".worktrees"
-MEMORY_DIR = WORKDIR / ".memory"
+
+
+def _resolve_memory_dir() -> Path:
+    """If running inside a worktree, use the parent project's .memory/ so
+    memories are shared across worktree sessions."""
+    wd = WORKDIR
+    if ".worktrees" in str(wd):
+        parent = wd
+        while parent.name != ".worktrees" and parent.parent != parent:
+            parent = parent.parent
+        if parent.name == ".worktrees":
+            return parent.parent / ".memory"
+    return wd / ".memory"
+
+
+MEMORY_DIR = _resolve_memory_dir()
 MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
+USER_MEMORY_DIR = MEMORY_DIR / "user"
+AGENT_MEMORY_DIR = MEMORY_DIR / "agent"
+SHARED_MEMORY_DIR = MEMORY_DIR / "shared"
 DURABLE_PATH = WORKDIR / ".scheduled_tasks.json"
+PLANS_DIR = WORKDIR / ".cc_mine" / "plans"
+SESSIONS_DIR = WORKDIR / ".cc_mine" / "sessions"
+LOGS_DIR = WORKDIR / ".cc_mine" / "logs"
+TASK_OUTPUTS_DIR = WORKDIR / ".task_outputs"
 IDLE_POLL_INTERVAL = 5
 IDLE_TIMEOUT = 60
+
+
+def ensure_directories():
+    """Create all required runtime directories once at startup.
+
+    Called once from main() before the agent loop begins. This avoids
+    repeated mkdir(parents=True, exist_ok=True) calls scattered across
+    the codebase, reducing token waste from error messages and noise.
+    """
+    dirs = [
+        SKILLS_DIR,
+        TRANSCRIPT_DIR,
+        TOOL_RESULTS_DIR,
+        TASKS_DIR,
+        MAILBOX_DIR,
+        WORKTREES_DIR,
+        MEMORY_DIR,
+        PLANS_DIR,
+        SESSIONS_DIR,
+        LOGS_DIR,
+        TASK_OUTPUTS_DIR,
+        USER_MEMORY_DIR,
+        AGENT_MEMORY_DIR,
+        SHARED_MEMORY_DIR,
+        WORKDIR / ".cc_mine",
+    ]
+    for d in dirs:
+        d.mkdir(parents=True, exist_ok=True)
+
+
+# ── CC_MINE.md user preferences ──
+CC_MINE_MD_PATH = WORKDIR / "CC_MINE.md"
+
+
+def load_cc_mine_md() -> str:
+    """Load user preferences from CC_MINE.md. Returns '' if not found."""
+    if not CC_MINE_MD_PATH.exists():
+        return ""
+    try:
+        content = CC_MINE_MD_PATH.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        content = CC_MINE_MD_PATH.read_text(encoding="gbk", errors="replace")
+
+    if not content.strip():
+        return ""
+
+    # Warn if unusually long (>2000 chars wastes tokens every call)
+    if len(content) > 2000:
+        print(f"  \033[33m[warning] CC_MINE.md is {len(content)} chars. "
+              f"Consider keeping it under 2000 to save tokens.\033[0m")
+
+    return content
+
+
 PROMPT_SECTIONS = {
     "identity": (
         "You are cc_mine, the LEAD orchestrator agent. You are NOT a worker — you are a PLANNER and DELEGATOR.\n"

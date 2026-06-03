@@ -9,7 +9,7 @@ from task import can_start
 from tools.bash import run_bash
 from tools.file_ops import run_read, run_write, run_edit, run_glob
 from tools.todo_write import run_todo_write
-from call_llm import  client
+from call_llm import get_client as _get_client
 # ── Subagent Tool (OpenAI Format) ──
 
 # 子智能体的系统提示词，从 config 注入统一的 subagent 身份
@@ -160,15 +160,23 @@ def spawn_subagent(description: str) -> str:
     ]
 
     # 严格限流：最多允许子智能体连续思考、交互 30 轮，防止死循环烧干 Token
+    from ErrorRecovery import RecoveryState, with_retry
+    sub_state = RecoveryState()
+
     for _ in range(30):
         try:
-            # 呼叫 OpenAI 接口
-            response = client.chat.completions.create(
-                model=os.getenv("PRIMARY_MODEL"),
-                messages=messages,
-                tools=SUB_TOOLS,  # 喂给它专属的简易工具箱（如 bash、read_file）
-                max_tokens=4000
+            # 呼叫 OpenAI 接口（带重试 + 模型降级）
+            response = with_retry(
+                lambda: _get_client().chat.completions.create(
+                    model=os.getenv("PRIMARY_MODEL"),
+                    messages=messages,
+                    tools=SUB_TOOLS,
+                    max_tokens=4000,
+                ), state=sub_state
             )
+        except RuntimeError as e:
+            # with_retry exceeded MAX_RETRIES
+            return f"Subagent execution failed after retries: {str(e)}"
         except Exception as e:
             return f"Subagent execution failed on API error: {str(e)}"
 

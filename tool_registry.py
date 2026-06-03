@@ -82,6 +82,25 @@ BUILTIN_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "grep",
+            "description": "Search file contents with a regex pattern. Returns file:line:content matches.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "Regex pattern to search for"},
+                    "path": {"type": "string", "description": "File or directory to search (default: '.')"},
+                    "glob": {"type": "string", "description": "Glob filter for files (e.g. '*.py')"},
+                    "ignore_case": {"type": "boolean"},
+                    "max_results": {"type": "integer"},
+                    "context": {"type": "integer", "description": "Lines of context around each match"}
+                },
+                "required": ["pattern"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "glob",
             "description": "Find files matching a glob pattern. Use 'pattern' (or 'path' as alias).",
             "parameters": {
@@ -413,13 +432,39 @@ BUILTIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "connect_mcp",
-            "description": "Connect to an MCP server (docs, deploy) and discover tools.",
+            "description": "Connect to an MCP server and discover its tools. Connected tools appear as mcp__<server>__<tool>. Available: docs, deploy (mock); configure real servers in mcp.py MCP_CONFIG.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string"}
                 },
                 "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "disconnect_mcp",
+            "description": "Disconnect from an MCP server and clean up its subprocess.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"}
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_mcp_servers",
+            "description": "List connected and available MCP servers.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
             }
         }
     },
@@ -561,12 +606,13 @@ BUILTIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "submit_plan",
-            "description": "Submit your plan for user approval. Include plan text and numbered steps.",
+            "description": "Submit your plan for user approval. Writes a markdown plan file that the user can open in their IDE, review, and edit. When the user approves via /plan-approve, the file is re-read to capture any modifications. Include a detailed implementation plan in the 'details' field.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "plan_text": {"type": "string", "description": "Summary of the plan"},
-                    "steps": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}}}}
+                    "plan_text": {"type": "string", "description": "Summary of the plan / goal (1-2 sentences)"},
+                    "steps": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}}}, "description": "Numbered implementation steps"},
+                    "details": {"type": "string", "description": "Optional: detailed implementation notes — approach, files to modify, risks, trade-offs. Rendered as markdown in the plan file."}
                 },
                 "required": ["plan_text", "steps"]
             }
@@ -604,6 +650,21 @@ BUILTIN_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "install_skill",
+            "description": "Install a skill from a URL into the skills directory. Supports GitHub repos, .md files, and .zip archives.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to download skill from"},
+                    "name": {"type": "string", "description": "Name for the installed skill (optional)"}
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "structured_output",
             "description": "Generate a JSON response matching a schema. Use when you need structured data output.",
             "parameters": {
@@ -621,13 +682,14 @@ BUILTIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "add_memory",
-            "description": "Save a fact to persistent memory with title, content, and optional comma-separated tags.",
+            "description": "Save a fact to persistent memory. Use source='user' for user habits/preferences (permanent), source='agent' for agent decisions/notes. DO NOT memorize code structure or file contents that can be re-read from the project.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string"},
                     "content": {"type": "string"},
-                    "tags": {"type": "string"}
+                    "tags": {"type": "string"},
+                    "source": {"type": "string", "enum": ["agent", "user", "shared"]}
                 },
                 "required": ["title", "content"]
             }

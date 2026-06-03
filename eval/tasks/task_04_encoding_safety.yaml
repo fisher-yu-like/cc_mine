@@ -1,0 +1,25 @@
+# Task 4: Verify UTF-8/GBK encoding safety across all file tools
+name: encoding-safety
+description: All file read/write operations must handle non-UTF-8 content gracefully
+files:
+  - tools/file_ops.py
+  - tools/bash.py
+  - tools/git.py
+  - memory.py
+  - skill_load.py
+prompt: |
+  Verify that all file-read paths have encoding fallback (utf-8 → gbk → latin-1/replace)
+  and all subprocess.run calls use manual decode with errors="replace".
+judge:
+  - type: grep
+    pattern: "encoding="
+    files: tools/file_ops.py
+    expect: "true"
+  - type: grep
+    pattern: "errors=.replace"
+    files: tools/bash.py tools/git.py worktree.py
+    expect: "true"
+  - type: grep
+    pattern: "UnicodeDecodeError"
+    files: memory.py skill_load.py tools/file_ops.py
+    expect: "true"

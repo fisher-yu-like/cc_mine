@@ -1,0 +1,25 @@
+# Task 1: Verify all BUILTIN_HANDLERS map to runnable functions
+name: tool-dispatch-integrity
+description: Every tool name in BUILTIN_HANDLERS must map to a callable function
+files:
+  - executor.py
+  - tool_registry.py
+prompt: |
+  Verify that every key in BUILTIN_HANDLERS (executor.py) has a corresponding
+  definition in BUILTIN_TOOLS (tool_registry.py). Report any mismatches.
+judge:
+  - type: python
+    script: |
+      import sys
+      sys.path.insert(0, '.')
+      from executor import BUILTIN_HANDLERS
+      from tool_registry import BUILTIN_TOOLS
+      tool_names = {t['function']['name'] for t in BUILTIN_TOOLS}
+      handler_names = set(BUILTIN_HANDLERS.keys())
+      only_tools = tool_names - handler_names
+      only_handlers = handler_names - tool_names
+      assert not only_tools, f"Tools without handlers: {only_tools}"
+      assert not only_handlers, f"Handlers without tool defs: {only_handlers}"
+      for name, fn in BUILTIN_HANDLERS.items():
+          assert callable(fn), f"Handler for '{name}' is not callable: {type(fn)}"
+      print(f"OK: {len(handler_names)} tools, all mapped and callable")

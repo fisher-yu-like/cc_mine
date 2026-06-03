@@ -3,7 +3,8 @@ import time
 from config import MAILBOX_DIR
 import config
 
-MAILBOX_DIR.mkdir(exist_ok=True)
+if not MAILBOX_DIR.exists():
+    MAILBOX_DIR.mkdir(exist_ok=True)
 import threading
 try:
     import readline

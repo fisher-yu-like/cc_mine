@@ -1,0 +1,91 @@
+# Code Modification Suite (weight: 20%)
+# Tests file editing precision, diff quality, and modification safety.
+dimension: "3. Code Modification"
+weight: 0.20
+
+tasks:
+  - id: modify_edit_diff_output
+    name: "edit_file returns colored diff (not full file)"
+    judge: python
+    args:
+      code: |
+        import os
+        from tools.file_ops import run_write, run_edit
+
+        p = "_ccmine_mod_test.py"
+        content = "def hello():\n    print('old')\n    return 1\n\ndef bye():\n    print('bye')\n"
+        run_write(p, content)
+
+        r = run_edit(p, "print('old')", "print('NEW')")
+        ok1 = "Edited" in r
+        ok2 = len(r) < 3000  # diff only, not full file
+        ok3 = "hello" in r
+
+        if os.path.exists(p): os.remove(p)
+        _result = "OK" if (ok1 and ok2 and ok3) else f"FAIL: ok1={ok1} ok2={ok2} ok3={ok3} len={len(r)}"
+    expected: "OK"
+
+  - id: modify_edit_not_found
+    name: "edit_file reports when text not found"
+    judge: python
+    args:
+      code: |
+        import os
+        from tools.file_ops import run_write, run_edit
+        p = "_ccmine_nf.txt"
+        run_write(p, "hello")
+        r = run_edit(p, "nonexistent", "replacement")
+        ok = "text not found" in r.lower() or "Error" in r
+        if os.path.exists(p): os.remove(p)
+        _result = "OK" if ok else f"FAIL: {r}"
+    expected: "OK"
+
+  - id: modify_write_creates_dirs
+    name: "write_file creates parent directories"
+    judge: python
+    args:
+      code: |
+        import os, shutil
+        from tools.file_ops import run_write
+        tmp = "_ccmine_nested/sub/test.txt"
+        run_write(tmp, "nested")
+        ok = os.path.exists(tmp)
+        if os.path.exists("_ccmine_nested"): shutil.rmtree("_ccmine_nested", ignore_errors=True)
+        _result = "OK" if ok else "FAIL"
+    expected: "OK"
+
+  - id: modify_safe_path_blocks
+    name: "safe_path blocks workspace escape"
+    judge: python
+    args:
+      code: |
+        from tools.file_ops import safe_path
+        try:
+            safe_path("../../etc/passwd")
+            _result = "FAIL: should have raised"
+        except ValueError:
+            _result = "OK"
+        except Exception as e:
+            _result = f"FAIL: wrong error: {e}"
+    expected: "OK"
+
+  - id: modify_bash_rendered
+    name: "bash output is rendered with command header"
+    judge: python
+    args:
+      code: |
+        from tools.bash import run_bash
+        r = run_bash("echo test123")
+        ok = "test123" in r
+        _result = "OK" if ok else f"FAIL: {r[:100]}"
+    expected: "OK"
+
+  - id: modify_git_rendered
+    name: "git output is rendered with status"
+    judge: python
+    args:
+      code: |
+        from tools.git import run_git
+        ok, r = run_git(["status"])
+        _result = "OK" if ok or "[OK]" in r or "[FAILED]" in r else f"FAIL: {r[:100]}"
+    expected: "OK"

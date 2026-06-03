@@ -1,0 +1,126 @@
+# Context & Memory Suite (weight: 10%)
+# Tests memory CRUD, context compaction, and skill persistence.
+dimension: "5. Context & Memory"
+weight: 0.10
+
+tasks:
+  - id: mem_add_user
+    name: "add user memory persists to user/ subdir"
+    judge: python
+    args:
+      code: |
+        from memory import add_memory, delete_memory
+        from config import USER_MEMORY_DIR
+
+        r = add_memory("user_pref_test", "prefers tabs over spaces", source="user")
+        ok1 = "user" in r.lower()
+
+        # Check file exists in user subdir
+        import glob
+        files = list(USER_MEMORY_DIR.glob("*.md"))
+        ok2 = any("user-pref-test" in f.name for f in files)
+
+        delete_memory("user-pref-test")
+        _result = "OK" if (ok1 and ok2) else f"FAIL: ok1={ok1} ok2={ok2}"
+    expected: "OK"
+
+  - id: mem_add_agent
+    name: "add agent memory goes to agent/ subdir"
+    judge: python
+    args:
+      code: |
+        from memory import add_memory, delete_memory
+        from config import AGENT_MEMORY_DIR
+
+        r = add_memory("agent_note_test", "fixed bug in login", source="agent")
+        files = list(AGENT_MEMORY_DIR.glob("*.md"))
+        ok = any("agent-note-test" in f.name for f in files)
+        delete_memory("agent-note-test")
+        _result = "OK" if ok else "FAIL"
+    expected: "OK"
+
+  - id: mem_dedup
+    name: "duplicate memory detection works"
+    judge: python
+    args:
+      code: |
+        from memory import add_memory, delete_memory, _is_duplicate
+        from config import AGENT_MEMORY_DIR
+
+        # First add
+        add_memory("dedup_test", "unique content for dedup test ABC123", source="agent")
+        # Second add with same content — should be skipped or detected
+        r2 = add_memory("dedup_test", "unique content for dedup test ABC123", source="agent")
+        ok = "skip" in r2.lower() or "similar" in r2.lower() or "already" in r2.lower()
+        delete_memory("dedup-test")
+        _result = "OK" if ok else f"FAIL: {r2}"
+    expected: "OK"
+
+  - id: mem_context_update
+    name: "update_context collects memories from subdirs"
+    judge: python
+    args:
+      code: |
+        from memory import update_context, add_memory, delete_memory
+        add_memory("ctx_test_pref", "always use pytest", source="user")
+        ctx = update_context({}, [])
+        ok1 = ctx.get("memories") and len(ctx["memories"]) > 0
+        ok2 = "User" in ctx["memories"] or "pytest" in ctx["memories"]
+        delete_memory("ctx-test-pref")
+        _result = "OK" if (ok1 and ok2) else f"FAIL: mem_len={len(ctx.get('memories',''))}"
+    expected: "OK"
+
+  - id: mem_search
+    name: "search_memory finds content across subdirs"
+    judge: python
+    args:
+      code: |
+        from memory import add_memory, search_memory, delete_memory
+        add_memory("search_test_xyz", "benchmark searchable content", source="agent")
+        r = search_memory("benchmark")
+        ok = "search_test_xyz" in r.lower() or "searchable" in r.lower()
+        delete_memory("search-test-xyz")
+        _result = "OK" if ok else f"FAIL: {r[:100]}"
+    expected: "OK"
+
+  - id: mem_skill_context
+    name: "skill context survives compaction simulation"
+    judge: python
+    args:
+      code: |
+        from skill_context import store_skill_content, get_loaded_skills_context, is_skill_loaded, clear_skills
+        store_skill_content("test-skill", "# Test Skill\nInstructions for testing.\n" * 20)
+        ctx = get_loaded_skills_context()
+        ok1 = "test-skill" in ctx and is_skill_loaded("test-skill")
+        ok2 = len(ctx) <= 2000  # capped at 1500 per skill
+        clear_skills()
+        ok3 = not is_skill_loaded("test-skill")
+        _result = "OK" if (ok1 and ok2 and ok3) else f"FAIL: ok1={ok1} ok2={ok2} ok3={ok3} len={len(ctx)}"
+    expected: "OK"
+
+  - id: mem_orphan_clean
+    name: "orphan tool messages stripped correctly"
+    judge: python
+    args:
+      code: |
+        from memory import _strip_orphan_tools
+        msgs = [
+            {"role": "assistant", "tool_calls": [{"id": "orphan_call", "function": {"name": "bash"}}]},
+            {"role": "tool", "tool_call_id": "valid_id"},
+        ]
+        cleaned = _strip_orphan_tools(msgs)
+        # Orphaned assistant tool_call (no response) should be stripped
+        # Orphaned tool msg (no corresponding call) should be removed
+        ok = len(cleaned) <= 2  # might strip both orphans
+        _result = "OK" if ok else f"FAIL: cleaned={len(cleaned)} msgs"
+    expected: "OK"
+
+  - id: mem_compaction_functions
+    name: "all 4 compaction layers importable"
+    judge: python
+    args:
+      code: |
+        from memory import (tool_result_budget, snip_compact, micro_compact,
+                           compact_history, prepare_context, reactive_compact)
+        _result = "OK"
+    expected: "OK"

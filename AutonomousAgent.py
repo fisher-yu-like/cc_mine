@@ -12,7 +12,7 @@ from tool_registry import call_tool_handler
 from task import can_start, list_tasks, claim_task, load_task, complete_task
 from tools.bash import run_bash
 from tools.file_ops import run_read, run_write
-from call_llm import client
+from call_llm import get_client as _get_client
 SUB_SYSTEM = (
     f"You are a coding subagent at {WORKDIR}. "
     "Complete the task, then return a concise final summary. "
@@ -199,16 +199,36 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                     if non_protocol:
                         messages.append({"role": "user", "content": f"<inbox>{json.dumps(non_protocol)}</inbox>"})
 
-                # ── 4. 适配 OpenAI 的 Completions 呼叫 ──
+                # ── 4. API 呼叫（带重试 + 模型降级） ──
+                from ErrorRecovery import RecoveryState as _RS, with_retry as _wr
+                _tm_state = getattr(run, '_recovery_state', None)
+                if _tm_state is None:
+                    _tm_state = _RS()
+                    run._recovery_state = _tm_state  # persist across loop iterations
+
+                consecutive_errors = getattr(run, '_consecutive_errors', 0)
                 try:
-                    response = client.chat.completions.create(
-                        model=os.getenv("PRIMARY_MODEL"),
-                        messages=messages[-20:],  # 滚动上下文窗口
-                        tools=sub_tools,
-                        max_tokens=4000
+                    response = _wr(
+                        lambda: _get_client().chat.completions.create(
+                            model=os.getenv("PRIMARY_MODEL"),
+                            messages=messages[-20:],
+                            tools=sub_tools,
+                            max_tokens=4000,
+                        ), state=_tm_state
                     )
-                except Exception:
-                    break
+                    run._consecutive_errors = 0  # reset on success
+                except Exception as e:
+                    run._consecutive_errors = consecutive_errors + 1
+                    err_msg = f"[Teammate {name}] API error (#{run._consecutive_errors}): {type(e).__name__}: {str(e)[:100]}"
+                    print(f"  \033[31m{err_msg}\033[0m")
+                    if run._consecutive_errors >= 3:
+                        BUS.send(name, "lead",
+                                 f"Teammate shutting down after {run._consecutive_errors} consecutive API errors: {str(e)[:100]}",
+                                 "error")
+                        print(f"  \033[31m[Teammate {name}] shutting down after {run._consecutive_errors} errors\033[0m")
+                        break
+                    time.sleep(2 ** consecutive_errors)  # backoff
+                    continue
 
                 choice = response.choices[0].message
                 tool_calls = choice.tool_calls

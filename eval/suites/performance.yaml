@@ -1,0 +1,74 @@
+# Performance Suite (weight: 5%)
+# Tests system responsiveness, cache efficiency, and resource usage.
+dimension: "7. Performance"
+weight: 0.05
+
+tasks:
+  - id: perf_cache_hit
+    name: "system prompt cache hits on repeated calls"
+    judge: python
+    args:
+      code: |
+        from call_llm import assemble_system_prompt, get_cache_stats
+        # First call — miss
+        ctx = {}
+        _ = assemble_system_prompt(ctx)
+        hits1, misses1 = get_cache_stats()
+        # Second call with same context — should hit
+        _ = assemble_system_prompt(ctx)
+        hits2, misses2 = get_cache_stats()
+        ok = hits2 > hits1  # cache was hit
+        _result = "OK" if ok else f"FAIL: hits1={hits1} hits2={hits2} misses1={misses1} misses2={misses2}"
+    expected: "OK"
+
+  - id: perf_token_estimate
+    name: "token estimation function returns reasonable values"
+    judge: python
+    args:
+      code: |
+        from call_llm import estimate_tokens
+        msgs = [{"role": "user", "content": "Hello, world!" * 100}]
+        est = estimate_tokens(msgs)
+        # Should be > 0 and reasonable
+        ok = 50 < est < 5000
+        _result = "OK" if ok else f"FAIL: {est} tokens"
+    expected: "OK"
+
+  - id: perf_config_load_time
+    name: "config module has needed constants"
+    judge: python
+    args:
+      code: |
+        from config import (CONTEXT_LIMIT, MAX_TURNS, DEFAULT_MAX_TOKENS,
+                            KEEP_RECENT_TOOL_RESULTS, PERSIST_THRESHOLD)
+        ok = all([
+            CONTEXT_LIMIT > 0,
+            MAX_TURNS > 0,
+            DEFAULT_MAX_TOKENS > 0,
+            KEEP_RECENT_TOOL_RESULTS > 0,
+        ])
+        _result = "OK" if ok else "FAIL"
+    expected: "OK"
+
+  - id: perf_spinner_frames
+    name: "spinner frames auto-detect encoding"
+    judge: python
+    args:
+      code: |
+        from spinner import _FRAMES
+        ok = len(_FRAMES) > 0
+        _result = "OK" if ok else "FAIL: no frames"
+    expected: "OK"
+
+  - id: perf_ensure_dirs
+    name: "ensure_directories runs without errors"
+    judge: python
+    args:
+      code: |
+        from config import ensure_directories
+        try:
+            ensure_directories()
+            _result = "OK"
+        except Exception as e:
+            _result = f"FAIL: {e}"
+    expected: "OK"

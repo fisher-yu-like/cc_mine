@@ -1,0 +1,665 @@
+{
+  "benchmark": "cc_mine",
+  "timestamp": "2026-06-03T23:45:12.212485",
+  "composite_score": 18.0,
+  "total_seconds": 0.4,
+  "total_tasks": 59,
+  "total_passed": 9,
+  "suites": [
+    {
+      "suite": "code_modification",
+      "dimension": "3. Code Modification",
+      "weight": 0.2,
+      "pass_rate": 0.0,
+      "avg_score": 0.0,
+      "duration_ms": 4.0,
+      "task_count": 6
+    },
+    {
+      "suite": "code_understanding",
+      "dimension": "2. Code Understanding",
+      "weight": 0.2,
+      "pass_rate": 0.9,
+      "avg_score": 0.9,
+      "duration_ms": 379.0,
+      "task_count": 10
+    },
+    {
+      "suite": "context_memory",
+      "dimension": "5. Context & Memory",
+      "weight": 0.1,
+      "pass_rate": 0.0,
+      "avg_score": 0.0,
+      "duration_ms": 1.0,
+      "task_count": 8
+    },
+    {
+      "suite": "performance",
+      "dimension": "7. Performance",
+      "weight": 0.05,
+      "pass_rate": 0.0,
+      "avg_score": 0.0,
+      "duration_ms": 1.0,
+      "task_count": 5
+    },
+    {
+      "suite": "planning_execution",
+      "dimension": "4. Planning & Execution",
+      "weight": 0.15,
+      "pass_rate": 0.0,
+      "avg_score": 0.0,
+      "duration_ms": 1.0,
+      "task_count": 7
+    },
+    {
+      "suite": "safety_permissions",
+      "dimension": "6. Safety & Permissions",
+      "weight": 0.1,
+      "pass_rate": 0.0,
+      "avg_score": 0.0,
+      "duration_ms": 1.0,
+      "task_count": 8
+    },
+    {
+      "suite": "tool_completeness",
+      "dimension": "1. Tool Completeness",
+      "weight": 0.2,
+      "pass_rate": 0.0,
+      "avg_score": 0.0,
+      "duration_ms": 2.0,
+      "task_count": 15
+    }
+  ],
+  "tasks": [
+    {
+      "suite": "code_modification",
+      "id": "modify_edit_diff_output",
+      "name": "edit_file returns colored diff (not full file)",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 3.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_modification",
+      "id": "modify_edit_not_found",
+      "name": "edit_file reports when text not found",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_modification",
+      "id": "modify_write_creates_dirs",
+      "name": "write_file creates parent directories",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 1.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_modification",
+      "id": "modify_safe_path_blocks",
+      "name": "safe_path blocks workspace escape",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_modification",
+      "id": "modify_bash_rendered",
+      "name": "bash output is rendered with command header",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_modification",
+      "id": "modify_git_rendered",
+      "name": "git output is rendered with status",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_understanding",
+      "id": "understand_func_def",
+      "name": "find function definition with grep",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 1.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_understanding",
+      "id": "understand_class_usage",
+      "name": "find all RecoveryState usages",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 376.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_understanding",
+      "id": "understand_import_graph",
+      "name": "verify key imports exist",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_understanding",
+      "id": "understand_config_constants",
+      "name": "config.py defines required constants",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_understanding",
+      "id": "understand_safety_patterns",
+      "name": "DENY_LIST contains expected patterns",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 1.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_understanding",
+      "id": "understand_memory_pipeline",
+      "name": "four compaction layers are defined",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_understanding",
+      "id": "understand_spinner_states",
+      "name": "spinner has 4 states defined",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_understanding",
+      "id": "understand_tool_count",
+      "name": "at least 38 tools in registry",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_understanding",
+      "id": "understand_file_encoding",
+      "name": "file_ops handles encoding fallback",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "code_understanding",
+      "id": "understand_repl_ui",
+      "name": "REPL UI header function exists",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 1.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "context_memory",
+      "id": "mem_add_user",
+      "name": "add user memory persists to user/ subdir",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "context_memory",
+      "id": "mem_add_agent",
+      "name": "add agent memory goes to agent/ subdir",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "context_memory",
+      "id": "mem_dedup",
+      "name": "duplicate memory detection works",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "context_memory",
+      "id": "mem_context_update",
+      "name": "update_context collects memories from subdirs",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "context_memory",
+      "id": "mem_search",
+      "name": "search_memory finds content across subdirs",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "context_memory",
+      "id": "mem_skill_context",
+      "name": "skill context survives compaction simulation",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 1.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "context_memory",
+      "id": "mem_orphan_clean",
+      "name": "orphan tool messages stripped correctly",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "context_memory",
+      "id": "mem_compaction_functions",
+      "name": "all 4 compaction layers importable",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "performance",
+      "id": "perf_cache_hit",
+      "name": "system prompt cache hits on repeated calls",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "performance",
+      "id": "perf_token_estimate",
+      "name": "token estimation function returns reasonable values",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "performance",
+      "id": "perf_config_load_time",
+      "name": "config module has needed constants",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "performance",
+      "id": "perf_spinner_frames",
+      "name": "spinner frames auto-detect encoding",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "performance",
+      "id": "perf_ensure_dirs",
+      "name": "ensure_directories runs without errors",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 1.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_state_transitions",
+      "name": "planning state machine complete cycle",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_readonly_enforcement",
+      "name": "planning mode enforces read-only",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_workflow_dag",
+      "name": "workflow DAG engine basic flow",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_task_board_crud",
+      "name": "task board create/list/claim/complete",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_cron_validation",
+      "name": "cron expression validation works",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_message_bus",
+      "name": "inter-agent message passing works",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 1.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_session_persistence",
+      "name": "session save and load roundtrip",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "safety_permissions",
+      "id": "safety_deny_list",
+      "name": "hard deny list blocks dangerous commands",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "safety_permissions",
+      "id": "safety_destructive_match",
+      "name": "destructive patterns correctly matched",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "safety_permissions",
+      "id": "safety_sensitive_paths",
+      "name": "sensitive file paths list is complete",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "safety_permissions",
+      "id": "safety_git_hook",
+      "name": "git safety hook function registered",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "safety_permissions",
+      "id": "safety_rate_limiter",
+      "name": "bash rate limiter constants exist",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 1.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "safety_permissions",
+      "id": "safety_mode_manager",
+      "name": "mode manager auto/ask toggle works",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "safety_permissions",
+      "id": "safety_safe_path",
+      "name": "safe_path blocks path traversal",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "safety_permissions",
+      "id": "safety_config_permissions",
+      "name": "permissions.json loading function exists",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_read",
+      "name": "read_file returns content",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_write",
+      "name": "write_file creates file with content",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_edit",
+      "name": "edit_file replaces text and returns diff",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 1.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_glob",
+      "name": "glob finds files matching pattern",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_grep",
+      "name": "grep finds pattern in files",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_bash",
+      "name": "bash executes commands",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_memory_crud",
+      "name": "add/search/delete memory works",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_web_search",
+      "name": "web_search returns results",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_todo",
+      "name": "todo_write accepts valid todos",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_skill_list",
+      "name": "list_skills returns catalog",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 1.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_planning_state",
+      "name": "planning state machine transitions",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_subagent",
+      "name": "subagent spawn function exists",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_worktree_funcs",
+      "name": "worktree create/remove functions exist",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_cron_funcs",
+      "name": "cron schedule/list/cancel functions exist",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "tool_completeness",
+      "id": "tool_hooks_work",
+      "name": "hook registration and triggering works",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    }
+  ]
+}

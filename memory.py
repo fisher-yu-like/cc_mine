@@ -2,38 +2,59 @@ import AutonomousAgent
 import mcp
 from bg_task import collect_background_results
 from config import MEMORY_DIR, MEMORY_INDEX, PERSIST_THRESHOLD, KEEP_RECENT_TOOL_RESULTS, TOOL_RESULTS_DIR, \
-    TRANSCRIPT_DIR, CONTEXT_LIMIT
-from call_llm import client, estimate_tokens
+    TRANSCRIPT_DIR, CONTEXT_LIMIT, USER_MEMORY_DIR, AGENT_MEMORY_DIR, SHARED_MEMORY_DIR
+from call_llm import get_client as _get_client, estimate_tokens
 import json
 import time
 from pathlib import Path
 
 
 # ── 更新上下文 ──
+def _collect_memories(directory, label: str, max_items: int = 5) -> list[str]:
+    """Collect memory cards from a directory, sorted by recency."""
+    if not directory.exists():
+        return []
+    from skill_load import _parse_frontmatter
+    parts = []
+    for mf in sorted(directory.glob("*.md"),
+                     key=lambda p: p.stat().st_mtime, reverse=True)[:max_items]:
+        if mf.name == "MEMORY.md":
+            continue
+        try:
+            raw = mf.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raw = mf.read_text(encoding="gbk", errors="replace")
+        meta, body = _parse_frontmatter(raw)
+        title = meta.get("title", mf.stem)
+        parts.append(f"[{label}: {title}]\n{body[:400]}")
+    return parts
+
+
 def update_context(context: dict, messages: list) -> dict:
     parts = []
 
-    # Legacy MEMORY.md
+    # User memories (habits, preferences) — always include, highest priority
+    user_parts = _collect_memories(USER_MEMORY_DIR, "User Pref", max_items=10)
+    if user_parts:
+        parts.append("## User Memories (habits & preferences)\n" +
+                     "\n".join(user_parts))
+
+    # Shared memories (worktree-independent)
+    shared_parts = _collect_memories(SHARED_MEMORY_DIR, "Shared", max_items=5)
+    if shared_parts:
+        parts.append("## Shared Context\n" + "\n".join(shared_parts))
+
+    # Agent memories (recent decisions) — limited to most recent 3
+    agent_parts = _collect_memories(AGENT_MEMORY_DIR, "Agent Note", max_items=3)
+    if agent_parts:
+        parts.append("## Recent Agent Notes\n" + "\n".join(agent_parts))
+
+    # Legacy MEMORY.md (backward compatibility)
     if MEMORY_INDEX.exists():
         try:
-            parts.append(MEMORY_INDEX.read_text(encoding="utf-8")[:2000])
+            parts.append(MEMORY_INDEX.read_text(encoding="utf-8")[:1000])
         except UnicodeDecodeError:
-            parts.append(MEMORY_INDEX.read_text(encoding="gbk", errors="replace")[:2000])
-
-    # New: scan memory/ directory for .md files with frontmatter
-    mem_dir = MEMORY_DIR
-    if mem_dir.exists():
-        from skill_load import _parse_frontmatter
-        for mf in sorted(mem_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
-            if mf.name == "MEMORY.md":
-                continue  # already handled above
-            try:
-                raw = mf.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                raw = mf.read_text(encoding="gbk", errors="replace")
-            meta, body = _parse_frontmatter(raw)
-            title = meta.get("title", mf.stem)
-            parts.append(f"[{title}]\n{body[:500]}")
+            parts.append(MEMORY_INDEX.read_text(encoding="gbk", errors="replace")[:1000])
 
     memories = "\n\n".join(parts)[:3000]
     return {
@@ -44,53 +65,116 @@ def update_context(context: dict, messages: list) -> dict:
 
 
 # ── Structured memory CRUD ──
-def add_memory(title: str, content: str, tags: str = "") -> str:
-    """Create a new memory card in the memory directory."""
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _is_duplicate(content: str, target_dir, threshold: float = 0.6) -> bool:
+    """Check if very similar memory content already exists.
+
+    Uses Jaccard similarity on word sets (body only, ignoring frontmatter).
+    Returns True if a near-duplicate is found.
+    """
+    new_words = set(content.lower().split())
+    if not new_words:
+        return False
+    from skill_load import _parse_frontmatter
+    for mf in sorted(target_dir.glob("*.md")):
+        try:
+            raw = mf.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        _, body = _parse_frontmatter(raw)
+        existing_words = set(body.lower().split())
+        if not existing_words:
+            continue
+        overlap = len(new_words & existing_words)
+        union = len(new_words | existing_words)
+        if union > 0 and overlap / union > threshold:
+            return True
+    return False
+
+
+def add_memory(title: str, content: str, tags: str = "",
+               source: str = "agent") -> str:
+    """Create a memory card. source='user' stores permanently;
+    source='agent' stores transient decision notes.
+
+    DO NOT memorize code structure or file contents that can be re-read.
+    Only store user habits, preferences, and non-derivable decisions.
+    """
+    # Pick target directory based on source
+    if source == "user":
+        target_dir = USER_MEMORY_DIR
+    elif source == "shared":
+        target_dir = SHARED_MEMORY_DIR
+    else:
+        target_dir = AGENT_MEMORY_DIR
+
+    if not target_dir.exists():
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+    # Dedup: skip if very similar content already exists
+    if _is_duplicate(content, target_dir):
+        return (f"Memory skipped: similar content already exists "
+                f"(use /memory-add to force)")
+
     import re
     slug = re.sub(r'[^a-z0-9_-]', '-', title.lower())[:40]
-    path = MEMORY_DIR / f"{slug}.md"
+    path = target_dir / f"{slug}.md"
     ts = time.strftime("%Y-%m-%dT%H:%M:%S")
     tags_yaml = f"[{', '.join(t.strip() for t in tags.split(',') if t.strip())}]" if tags else "[]"
     body = (
         f"---\n"
         f"title: \"{title}\"\n"
         f"tags: {tags_yaml}\n"
+        f"source: {source}\n"
         f"created: {ts}\n"
         f"updated: {ts}\n"
         f"---\n"
         f"\n{content}\n"
     )
     path.write_text(body, encoding="utf-8")
-    print(f"  \033[32m[memory] +{slug}\033[0m")
-    return f"Memory '{title}' saved as {slug}"
+    print(f"  \033[32m[memory] +{source}/{slug}\033[0m")
+    return f"Memory '{title}' saved as {slug} [{source}]"
 
 
 def search_memory(query: str) -> str:
-    """Full-text search across memory files."""
+    """Full-text search across ALL memory files (root + subdirs)."""
     if not MEMORY_DIR.exists():
         return "(no memories yet)"
     results = []
     qlower = query.lower()
-    for mf in sorted(MEMORY_DIR.glob("*.md")):
-        try:
-            text = mf.read_text(encoding="utf-8").lower()
-        except UnicodeDecodeError:
-            text = mf.read_text(encoding="gbk", errors="replace").lower()
-        if qlower in text:
-            results.append(f"- `{mf.stem}`: {text[:120].strip()}")
+
+    # Scan root level + all subdirectories
+    search_dirs = [MEMORY_DIR]
+    for sd in [USER_MEMORY_DIR, AGENT_MEMORY_DIR, SHARED_MEMORY_DIR]:
+        if sd.exists():
+            search_dirs.append(sd)
+
+    for search_dir in search_dirs:
+        for mf in sorted(search_dir.glob("*.md")):
+            try:
+                text = mf.read_text(encoding="utf-8").lower()
+            except UnicodeDecodeError:
+                text = mf.read_text(encoding="gbk", errors="replace").lower()
+            if qlower in text:
+                results.append(f"- `{mf.stem}`: {text[:120].strip()}")
+
     if not results:
         return f"(no matches for '{query}')"
     return "\n".join(results[:10])
 
 
 def delete_memory(name: str) -> str:
-    """Delete a memory card by slug name."""
-    path = MEMORY_DIR / f"{name}.md"
-    if path.exists():
-        path.unlink()
-        print(f"  \033[31m[memory] -{name}\033[0m")
-        return f"Deleted memory '{name}'"
+    """Delete a memory card by slug name. Searches root + subdirs."""
+    # Try each directory
+    for target_dir in [MEMORY_DIR, USER_MEMORY_DIR,
+                        AGENT_MEMORY_DIR, SHARED_MEMORY_DIR]:
+        path = target_dir / f"{name}.md"
+        if path.exists():
+            path.unlink()
+            print(f"  \033[31m[memory] -{name}\033[0m")
+            return f"Deleted memory '{name}'"
+
     return f"Memory '{name}' not found"
 
 
@@ -138,19 +222,29 @@ def _strip_orphan_tools(messages: list) -> list:
 # ── 上下文准备 ──
 def prepare_context(messages: list) -> list:
     before = len(messages)
-    before_bytes = estimate_size(messages)
+
+    # Compute size ONCE before the pipeline — avoid redundant O(n) json.dumps
+    cur_size = estimate_size(messages)
+    before_bytes = cur_size
+
     messages[:] = tool_result_budget(messages)
     messages[:] = snip_compact(messages)
     messages[:] = micro_compact(messages)
-    if estimate_size(messages) > CONTEXT_LIMIT:
+
+    # Recompute only after layers 1-3 changed messages (compact may skip)
+    cur_size = estimate_size(messages)
+    if cur_size > CONTEXT_LIMIT:
         messages[:] = compact_history(messages)
+        cur_size = estimate_size(messages)
+
     messages[:] = _strip_orphan_tools(messages)
     after = len(messages)
-    after_bytes = estimate_size(messages)
-    if before != after or before_bytes > after_bytes:
-        before_tok = estimate_tokens(messages[:before]) if before else 0
-        after_tok = estimate_tokens(messages) if after else 0
-        print(f"  \033[90m[context] {before}→{after} msgs, ~{before_tok}→~{after_tok} tok, {before_bytes//1024}KB→{after_bytes//1024}KB\033[0m")
+    after_bytes = cur_size
+
+    if before != after or before_bytes != after_bytes:
+        est = estimate_tokens(messages)
+        print(f"  \033[90m[context] {before}→{after} msgs, ~{est} tok, "
+              f"{before_bytes//1024}KB→{after_bytes//1024}KB\033[0m")
     return messages
 
 
@@ -193,7 +287,8 @@ def collect_tool_results(messages: list):
 def persist_large_output(tool_call_id: str, output: str) -> str:
     if len(output) <= PERSIST_THRESHOLD:
         return output
-    TOOL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    if not TOOL_RESULTS_DIR.exists():
+        TOOL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     path = TOOL_RESULTS_DIR / f"{tool_call_id}.txt"
     if not path.exists():
         path.write_text(output, encoding="utf-8")
@@ -226,16 +321,103 @@ def tool_result_budget(messages: list, max_bytes: int = 200000) -> list:
     return messages
 
 
+# ── 中间段 AI 摘要 ──
+def _get_summary_model() -> str:
+    """Return the best model for summarization based on current provider."""
+    try:
+        from call_llm import get_provider_info
+        info = get_provider_info()
+        if info.get("provider") == "ollama":
+            return info.get("model", "llama3")
+    except ImportError:
+        pass
+    return "deepseek-v4-flash"
+
+
+def _summarize_section(messages: list) -> str:
+    """Fast AI summary of a conversation section. Uses flash model for low cost."""
+    if len(messages) <= 5:
+        return f"Snipped {len(messages)} system/transition messages."
+
+    # Extract key info without dumping full JSON
+    compact_lines = []
+    for m in messages:
+        role = m.get("role", "?")
+        if role == "user":
+            content = str(m.get("content", ""))[:300]
+            compact_lines.append(f"[user]: {content}")
+        elif role == "assistant":
+            content = str(m.get("content", ""))[:200]
+            tool_names = []
+            for tc in (m.get("tool_calls") or []):
+                tool_names.append(tc.get("function", {}).get("name", "?"))
+            tools_str = f" [called: {', '.join(tool_names)}]" if tool_names else ""
+            compact_lines.append(f"[assistant]{tools_str}: {content}")
+        elif role == "tool":
+            name = m.get("name", "tool")
+            content = str(m.get("content", ""))[:300]
+            compact_lines.append(f"[tool:{name}]: {content}")
+    conversation = "\n".join(compact_lines)[:30000]
+
+    prompt = (
+        "Summarize this coding session segment. List:\n"
+        "1. Files read and key findings from each\n"
+        "2. Commands run and their results\n"
+        "3. Code changes made and why\n"
+        "4. Decisions or conclusions reached\n"
+        "5. Errors encountered and resolutions\n"
+        "Be concise. This summary replaces the full history to save context.\n\n"
+        + conversation
+    )
+    try:
+        response = _get_client().chat.completions.create(
+            model=_get_summary_model(),
+            messages=[{"role": "system", "content": "You are a technical note-taker. Be brief and factual. Output structured bullet points."},
+                      {"role": "user", "content": prompt}],
+            max_completion_tokens=800
+        )
+        return response.choices[0].message.content or "(summary unavailable)"
+    except Exception:
+        return f"Earlier conversation ({len(messages)} msgs) — key context may be lost."
+
+
 # ── 第二道防线：消息流腰斩 ──
 def snip_compact(messages: list, max_messages: int = 50) -> list:
     if len(messages) <= max_messages:
         return messages
     keep_head, keep_tail = 3, max_messages - 3
     snipped = len(messages) - keep_head - keep_tail
-    print(f"  \033[33m[snip compact] {snipped} middle messages removed ({len(messages)}→{max_messages}), kept head {keep_head} + tail {keep_tail}\033[0m")
+    middle = messages[keep_head:len(messages) - keep_tail]
+
+    # AI-summarize the snipped section instead of discarding it
+    print(f"  \033[33m[snip compact] {snipped} middle messages → summarizing... ({len(messages)}→{max_messages})\033[0m")
+    summary = _summarize_section(middle)
+
     return (messages[:keep_head] +
-            [{"role": "user", "content": f"[System Note: Snipped {snipped} historical messages to save memory.]"}] +
+            [{"role": "user", "content": f"[Context: earlier conversation summarized]\n\n{summary}"}] +
             messages[-keep_tail:])
+
+
+# ── 工具结果摘要 ──
+def _tool_result_digest(msg: dict) -> str:
+    """Keep a useful summary of a tool result instead of throwing it away."""
+    name = msg.get("name", "tool")
+    content = str(msg.get("content", ""))
+    content_len = len(content)
+
+    if content_len <= 500:
+        return content
+
+    # Keep head + tail so the LLM still has context
+    head = content[:400]
+    tail = content[-200:] if content_len > 600 else ""
+    separator = "\n... [snip] ...\n" if tail else ""
+
+    return (
+        f"[Compacted {name} result — was {content_len} chars. "
+        f"Key info preserved; re-run only if you need the full output.]\n"
+        f"{head}{separator}{tail}"
+    )
 
 
 # ── 第三道防线：旧工具结果冷冻 ──
@@ -246,24 +428,45 @@ def micro_compact(messages: list) -> list:
     frozen_count = 0
     for _, msg in tool_results[:-KEEP_RECENT_TOOL_RESULTS]:
         if len(str(msg.get("content", ""))) > 120:
-            msg["content"] = "[Earlier tool result compacted by system, Re-run command if needed.]"
+            msg["content"] = _tool_result_digest(msg)
             frozen_count += 1
     if frozen_count:
-        print(f"  \033[33m[micro compact] {frozen_count} old tool results frozen (keeping last {KEEP_RECENT_TOOL_RESULTS})\033[0m")
+        print(f"  \033[33m[micro compact] {frozen_count} old tool results condensed (keeping last {KEEP_RECENT_TOOL_RESULTS} full)\033[0m")
     return messages
 
 
 # ── 第四道防线：AI 摘要坍缩 ──
 def summarize_history(messages: list) -> str:
     conversation = json.dumps(messages, default=str)[:80000]
-    prompt = ("Summarize this coding-agent conversation so work can continue. "
-              "Preserve current goal, key findings, changed files, remaining work, "
-              "and user constraints.\n\n" + conversation)
-    response = client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "system", "content": "You are a senior tech lead tracking agent states."},
+    prompt = (
+        "You are summarizing a coding-agent session so work can continue seamlessly.\n"
+        "The summary below will REPLACE the full conversation history — the agent must "
+        "be able to continue without re-reading files or re-running completed commands.\n\n"
+        "STRUCTURED SUMMARY (use these exact headings):\n\n"
+        "## Current Goal\n"
+        "What the user asked for. Is it done, in progress, or blocked?\n\n"
+        "## Files Examined\n"
+        "For each file read: path + key findings (function names, bugs found, patterns noted). "
+        "If the file was NOT fully read, note what remains.\n\n"
+        "## Files Modified\n"
+        "For each edit: path + what changed + why. Include before/after for critical changes.\n\n"
+        "## Commands Executed\n"
+        "Command + result summary (exit code, key output lines, errors if any).\n\n"
+        "## Key Decisions & Conclusions\n"
+        "What was decided? What was ruled out? What approach was chosen and why?\n\n"
+        "## Errors & Fixes\n"
+        "What broke, why, and how it was fixed.\n\n"
+        "## Remaining Work\n"
+        "Explicit checklist of what still needs to be done.\n\n"
+        "## User Constraints\n"
+        "Any preferences, rules, or constraints the user mentioned.\n\n"
+        "CONVERSATION:\n" + conversation
+    )
+    response = _get_client().chat.completions.create(
+        model=_get_summary_model(),
+        messages=[{"role": "system", "content": "You are a senior tech lead tracking agent state. Your summaries must be structured, factual, and complete. Never omit file paths or function names."},
                   {"role": "user", "content": prompt}],
-        max_completion_tokens=2000
+        max_completion_tokens=2500
     )
     return response.choices[0].message.content or "(empty summary)"
 
@@ -304,7 +507,8 @@ def write_transcript(messages: list, name: str = "") -> Path:
     base = TRANSCRIPT_DIR
     if _transcript_session:
         base = base / _transcript_session
-    base.mkdir(parents=True, exist_ok=True)
+    if not base.exists():
+        base.mkdir(parents=True, exist_ok=True)
     if name:
         filename = f"{name}.jsonl"
     else:

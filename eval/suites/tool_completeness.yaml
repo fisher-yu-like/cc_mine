@@ -1,0 +1,182 @@
+# Tool Completeness Suite (weight: 20%)
+# Verifies all 38+ built-in tools are registered and handlers are callable.
+dimension: "1. Tool Completeness"
+weight: 0.20
+
+tasks:
+  # ── File tools ──
+  - id: tool_read
+    name: "read_file returns content"
+    judge: python
+    args:
+      code: |
+        from tools.file_ops import run_read
+        r = run_read("eval/suites/tool_completeness.yaml")
+        _result = "OK" if r and "Tool Completeness" in r else "FAIL"
+    expected: "OK"
+
+  - id: tool_write
+    name: "write_file creates file with content"
+    judge: python
+    args:
+      code: |
+        import os
+        from tools.file_ops import run_write
+        p = "_ccmine_test_write.txt"
+        r = run_write(p, "hello benchmark")
+        ok = "Wrote" in r and os.path.exists(p)
+        if os.path.exists(p): os.remove(p)
+        _result = "OK" if ok else "FAIL"
+    expected: "OK"
+
+  - id: tool_edit
+    name: "edit_file replaces text and returns diff"
+    judge: python
+    args:
+      code: |
+        import os
+        from tools.file_ops import run_write, run_edit
+        p = "_ccmine_test_edit.txt"
+        run_write(p, "line1\nline2 old\nline3\n")
+        r = run_edit(p, "line2 old", "line2 NEW")
+        ok = "Edited" in r and "line2 NEW" in r
+        if os.path.exists(p): os.remove(p)
+        _result = "OK" if ok else f"FAIL: {r[:100]}"
+    expected: "OK"
+
+  - id: tool_glob
+    name: "glob finds files matching pattern"
+    judge: python
+    args:
+      code: |
+        from tools.file_ops import run_glob
+        r = run_glob("*.py", "")
+        _result = "OK" if r and ".py" in r else f"FAIL: {r[:100]}"
+    expected: "OK"
+
+  - id: tool_grep
+    name: "grep finds pattern in files"
+    judge: python
+    args:
+      code: |
+        from tools.grep import run_grep
+        r = run_grep("def run_bash", "tools/")
+        _result = "OK" if r and "run_bash" in r else f"FAIL: {r[:100]}"
+    expected: "OK"
+
+  - id: tool_bash
+    name: "bash executes commands"
+    judge: python
+    args:
+      code: |
+        from tools.bash import run_bash
+        r = run_bash("echo hello_ccmine")
+        _result = "OK" if "hello_ccmine" in r else f"FAIL: {r[:100]}"
+    expected: "OK"
+
+  # ── Memory tools ──
+  - id: tool_memory_crud
+    name: "add/search/delete memory works"
+    judge: python
+    args:
+      code: |
+        from memory import add_memory, search_memory, delete_memory
+        add_memory("bench_test", "benchmark test content", source="agent")
+        found = "bench_test" in search_memory("benchmark")
+        delete_memory("bench-test")
+        _result = "OK" if found else "FAIL"
+    expected: "OK"
+
+  # ── Web tools ──
+  - id: tool_web_search
+    name: "web_search returns results"
+    judge: python
+    args:
+      code: |
+        from tools.web import run_web_search
+        r = run_web_search("Python programming")
+        _result = "OK" if r and len(r) > 100 else f"FAIL: empty/short"
+    expected: "OK"
+
+  # ── Todo tool ──
+  - id: tool_todo
+    name: "todo_write accepts valid todos"
+    judge: python
+    args:
+      code: |
+        from tools.todo_write import run_todo_write
+        r = run_todo_write([{"content": "test task", "status": "pending", "activeForm": "testing"}])
+        _result = "OK" if r else "FAIL"
+    expected: "OK"
+
+  # ── Skill tools ──
+  - id: tool_skill_list
+    name: "list_skills returns catalog"
+    judge: python
+    args:
+      code: |
+        from skill_load import list_skills
+        r = list_skills()
+        _result = "OK" if r and len(r) > 10 else f"FAIL: {r[:100]}"
+    expected: "OK"
+
+  # ── Planning tools ──
+  - id: tool_planning_state
+    name: "planning state machine transitions"
+    judge: python
+    args:
+      code: |
+        from planning import get_state, enter_plan_mode, exit_plan_mode
+        enter_plan_mode("test goal")
+        s1 = get_state()
+        exit_plan_mode("done")
+        s2 = get_state()
+        _result = "OK" if s1 == "planning" and s2 == "idle" else f"FAIL: {s1}/{s2}"
+    expected: "OK"
+
+  # ── Subagent / Workflow availability ──
+  - id: tool_subagent
+    name: "subagent spawn function exists"
+    judge: python
+    args:
+      code: |
+        from subagent import spawn_subagent, spawn_subagent_async
+        from AutonomousAgent import spawn_teammate_thread
+        from workflow import begin_workflow, add_workflow_node, seal_workflow
+        _result = "OK"
+    expected: "OK"
+
+  # ── Worktree tools ──
+  - id: tool_worktree_funcs
+    name: "worktree create/remove functions exist"
+    judge: python
+    args:
+      code: |
+        from worktree import create_worktree, remove_worktree, keep_worktree
+        _result = "OK"
+    expected: "OK"
+
+  # ── Cron tools ──
+  - id: tool_cron_funcs
+    name: "cron schedule/list/cancel functions exist"
+    judge: python
+    args:
+      code: |
+        from CronScheduler import run_schedule_cron, run_list_crons, run_cancel_cron
+        _result = "OK"
+    expected: "OK"
+
+  # ── Hook system ──
+  - id: tool_hooks_work
+    name: "hook registration and triggering works"
+    judge: python
+    args:
+      code: |
+        from hooks import register_hook, trigger_hooks, HOOKS
+        calls = []
+        def test_obs(block):
+            calls.append("observed")
+        register_hook("Stop", test_obs, role="observer")
+        trigger_hooks("Stop", [])
+        _result = "OK" if "observed" in calls else "FAIL"
+    expected: "OK"

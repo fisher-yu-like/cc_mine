@@ -1,0 +1,91 @@
+{
+  "generated": "2026-06-03 13:11:10",
+  "agent": "cc_mine",
+  "tasks": [
+    {
+      "task": "tool-dispatch-integrity",
+      "description": "Every tool name in BUILTIN_HANDLERS must map to a callable function",
+      "passed": true,
+      "judges_total": 1,
+      "judges_passed": 1,
+      "judges_failed": 0,
+      "duration": 1.6238416000269353,
+      "details": [
+        {
+          "type": "python",
+          "passed": true,
+          "detail": "OK: 43 tools, all mapped and callable",
+          "duration": 1.6238416000269353
+        }
+      ]
+    },
+    {
+      "task": "context-compaction-safety",
+      "description": "Compaction must not break assistant/tool message pairings",
+      "passed": true,
+      "judges_total": 1,
+      "judges_passed": 1,
+      "judges_failed": 0,
+      "duration": 1.2665681999642402,
+      "details": [
+        {
+          "type": "python",
+          "passed": true,
+          "detail": "\u001b[90m[orphan clean] 1 orphan tool_calls stripped, 0 orphan tool msgs removed\u001b[0m\r\nOK: compaction preserves message integrity",
+          "duration": 1.2665681999642402
+        }
+      ]
+    },
+    {
+      "task": "session-persistence-roundtrip",
+      "description": "Save a complex session, load it, verify integrity",
+      "passed": true,
+      "judges_total": 1,
+      "judges_passed": 1,
+      "judges_failed": 0,
+      "duration": 0.09139549999963492,
+      "details": [
+        {
+          "type": "python",
+          "passed": true,
+          "detail": "OK: 5 messages roundtripped successfully",
+          "duration": 0.09139549999963492
+        }
+      ]
+    },
+    {
+      "task": "encoding-safety",
+      "description": "All file read/write operations must handle non-UTF-8 content gracefully",
+      "passed": false,
+      "judges_total": 3,
+      "judges_passed": 2,
+      "judges_failed": 1,
+      "duration": 0.0,
+      "details": [
+        {
+          "type": "grep",
+          "passed": false,
+          "detail": "4 match(es) (expected 0)"
+        },
+        {
+          "type": "grep",
+          "passed": true,
+          "detail": "4 match(es) in ['bash.py', 'git.py', 'worktree.py']"
+        },
+        {
+          "type": "grep",
+          "passed": true,
+          "detail": "5 match(es) in ['memory.py', 'skill_load.py', 'file_ops.py']"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_tasks": 4,
+    "passed_tasks": 3,
+    "failed_tasks": 1,
+    "total_judges": 6,
+    "passed_judges": 5,
+    "total_duration": 2.9818052999908105
+  }
+}

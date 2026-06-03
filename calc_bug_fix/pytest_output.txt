@@ -1,0 +1,8 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.3, pluggy-1.6.0 -- D:\agent\cc_mine\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\agent\cc_mine
+plugins: anyio-4.13.0
+collecting ... collected 0 items
+
+============================ no tests ran in 0.01s ============================

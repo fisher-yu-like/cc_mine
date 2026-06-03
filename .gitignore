@@ -15,14 +15,17 @@ venv/
 *.swo
 
 # Runtime data
-.cc_mine/logs/
-.cc_mine/sessions/
-.cc_mine/plans/
-.transcripts/
-.task_outputs/
+.cc_mine/
+.memory/
+.tasks/
 .mailboxes/
 .worktrees/
+.transcripts/
+.task_outputs/
 .scheduled_tasks.json
+
+# Bench artifacts (temp test files)
+_ccmine_*
 
 # OS
 Thumbs.db

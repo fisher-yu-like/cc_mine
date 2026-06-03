@@ -14,7 +14,8 @@ META_EXT = ".meta.json"
 
 def _session_dir(workdir: Path) -> Path:
     d = workdir / ".cc_mine" / "sessions"
-    d.mkdir(parents=True, exist_ok=True)
+    if not d.exists():
+        d.mkdir(parents=True, exist_ok=True)
     return d
 
 
@@ -28,29 +29,58 @@ def _meta_path(workdir: Path, session_id: str) -> Path:
 
 def save_session(history: list, context: dict, workdir: Path,
                  session_id: str | None = None,
-                 label: str = "") -> str:
+                 label: str = "",
+                 crashed: bool = False) -> str:
     """Save current session to disk. Returns session_id."""
     if session_id is None:
         session_id = f"session_{int(time.time())}"
 
-    # Save message history as JSONL
+    # ── Atomic write: tmp file + rename prevents corrupt files on crash ──
     path = _session_path(workdir, session_id)
-    with path.open("w", encoding="utf-8") as f:
+    tmp_path = path.with_suffix(".tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
         for msg in history:
             f.write(json.dumps(msg, ensure_ascii=False, default=str) + "\n")
+    tmp_path.replace(path)  # atomic on same filesystem
 
-    # Save metadata
+    # Save metadata (also atomic)
     meta_path = _meta_path(workdir, session_id)
-    meta_path.write_text(json.dumps({
+    meta_tmp = meta_path.with_suffix(".tmp")
+    meta_tmp.write_text(json.dumps({
         "session_id": session_id,
         "label": label or f"Session {session_id}",
         "created": datetime.now().isoformat(),
         "message_count": len(history),
+        "crashed": crashed,
         "tools_connected": list(context.get("connected_mcp", [])),
         "active_teammates": list(context.get("active_teammates", [])),
     }, indent=2, ensure_ascii=False), encoding="utf-8")
+    meta_tmp.replace(meta_path)  # atomic
+
+    # Track last crash separately for fast startup detection
+    if crashed:
+        crash_file = _session_dir(workdir) / ".last_crash"
+        crash_file.write_text(session_id)
 
     return session_id
+
+
+def get_last_crash(workdir: Path) -> str | None:
+    """Return the session_id of the last crashed session, or None."""
+    crash_file = _session_dir(workdir) / ".last_crash"
+    if crash_file.exists():
+        sid = crash_file.read_text().strip()
+        # Verify the session file still exists
+        if _session_path(workdir, sid).exists():
+            return sid
+        crash_file.unlink(missing_ok=True)
+    return None
+
+
+def clear_crash_flag(workdir: Path):
+    """Clear the crash flag after successful resume."""
+    crash_file = _session_dir(workdir) / ".last_crash"
+    crash_file.unlink(missing_ok=True)
 
 
 def load_session(workdir: Path, session_id: str) -> tuple[list, dict] | None:

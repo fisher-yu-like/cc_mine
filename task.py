@@ -10,7 +10,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 
 from config import  TASKS_DIR
-TASKS_DIR.mkdir(exist_ok=True)
+if not TASKS_DIR.exists():
+    TASKS_DIR.mkdir(exist_ok=True)
 CURRENT_TODOS: list[dict] = []
 
 @dataclass

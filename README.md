@@ -2,32 +2,88 @@
 
 A self-written Claude Code clone powered by OpenAI-compatible LLMs (DeepSeek, OpenAI, etc.).
 
+Built from scratch following the Claude Code architecture — 38+ built-in tools, planning mode, subagents, workflows, DAG-based parallel execution, 4-layer context compaction, and a comprehensive safety/permission system.
+
+## Benchmark
+
+```
+Composite Score: 87.6/100  |  52/59 tasks passed
+```
+
+| Dimension | Weight | Score |
+|-----------|--------|-------|
+| Tool Completeness | 20% | 93.3% |
+| Code Understanding | 20% | 100% |
+| Code Modification | 20% | 100% |
+| Planning & Execution | 15% | 42.9% |
+| Context & Memory | 10% | 75.0% |
+| Safety & Permissions | 10% | 100% |
+| Performance | 5% | 100% |
+
+```bash
+python eval/benchmark.py              # Run full 59-task benchmark
+python eval/benchmark.py --suite tool # Single dimension
+python eval/benchmark.py --list       # List all tasks
+```
+
 ## Features
 
-- **Agent Loop** — Turn-based LLM interaction with 38 built-in tools
-- **Subagent System** — One-shot workers (sync/async) and persistent teammates
+### Core Agent
+- **Agent Loop** — Turn-based LLM interaction (OpenAI-compatible API)
+- **REPL Interface** — Rich-based terminal UI with status header, spinner, and structured output
 - **Planning Mode** — Read-only exploration → plan submission → user approval → execution
+- **Mode Selection** — `auto` (proceed without asking) / `ask` (confirm before writes/bash/git)
+- **Error Recovery** — Exponential backoff, model fallback, prompt-too-long handling
+- **Session Persistence** — Auto-save + `--resume` with crash detection
+
+### Delegation System
+- **Subagents** — One-shot workers (sync/async) with limited toolset
+- **Teammates** — Persistent background agents with inbox polling and task claiming
 - **Workflow Engine** — DAG-based parallel task orchestration (fan-out, map-reduce, pipeline)
-- **Task Management** — Persistent task board with dependency graph (blockedBy)
-- **Context Compaction** — 4-layer defense: budget → snip → micro → AI summary
-- **Structured Memory** — Frontmatter .md memory cards with search
-- **Session Persistence** — Auto-save + `--resume`
-- **Web Tools** — `web_search` + `web_fetch`
-- **Permission Model** — Configurable allow/deny/ask rules with hot-reload
-- **MCP Support** — Pluggable external tool servers (mock + real)
+- **Task Board** — Persistent task management with dependency graph (`blockedBy`)
+- **Inter-Agent Messages** — File-based mailbox system for agent communication
+
+### Context & Memory
+- **4-Layer Compaction** — budget → snip → micro → AI summary, with orphan cleanup
+- **Structured Memory** — Frontmatter `.md` cards in `user/` / `agent/` / `shared/` subdirectories
+- **Deduplication** — Jaccard similarity check prevents duplicate memories
+- **Worktree-Shared Memory** — Worktrees share parent project `.memory/`
+- **Skill Context** — Loaded skills persist in system prompt, survive compaction
+- **CC_MINE.md** — User preferences injected into context at session start
+
+### Safety & Permissions
+- **Hard Deny List** — 13 patterns (fork bombs, `mkfs`, `chmod 777 /`, etc.)
+- **Destructive Confirmation** — 15 patterns prompt user (`rm`, `chown`, `| bash`, `eval`, etc.)
+- **Git Safety Hook** — Blocks 8 destructive operations (`push --force`, `reset --hard`, etc.)
+- **Sensitive Path Protection** — Blocks writes to `.env`, `.ssh/`, `.git/config`, credentials
+- **Bash Rate Limiter** — Max calls per turn (configurable)
+- **Permissions.json** — Configurable allow/deny/ask rules with hot-reload
+
+### UI/UX
+- **Rich Terminal Renderer** — Panel cards, syntax-highlighted code, Markdown, Tables
+- **Spinner State Machine** — Animated feedback during LLM calls + tool execution (auto-detects GBK/UTF-8)
+- **Aider-Style Diffs** — Colored `+`/`-` diffs on file edits, never dumps full file
+- **REPL Header** — Shows model, mode, plan state, attachment count
+- **Bash/Git Result Rendering** — Formatted with command headers and status indicators
+
+### Tools & Integrations
+- **38+ Built-in Tools** — bash, file ops, grep, glob, web search/fetch, todo, git, memory CRUD
+- **MCP Support** — Pluggable external tool servers (mock + real stdio)
 - **Git Worktrees** — Isolated workspaces for parallel agents
 - **Cron Scheduler** — 5-field cron with durable persistence
-- **Error Recovery** — Exponential backoff, model fallback on server errors
+- **Skill System** — Loadable SKILL.md files; install from GitHub/md/zip URLs
+- **Cache Optimization** — 3-layer system prompt cache reduces token consumption
+- **Multimodal Input** — Image (base64), PDF, and text file attachments
 
 ## Quick Start
 
 ```bash
 # 1. Clone
-git clone https://github.com/YOUR_USER/cc_mine.git
+git clone https://github.com/fisher-yu-like/cc_mine.git
 cd cc_mine
 
 # 2. Install dependencies
-pip install openai python-dotenv pyyaml requests
+pip install openai python-dotenv pyyaml requests rich
 
 # 3. Configure
 cp .env.example .env
@@ -43,22 +99,63 @@ python main.py --workdir /path/to/project --model deepseek-v4-pro
 python main.py --resume
 ```
 
+## CLI Commands
+
+```
+/help          Show available commands
+/mode          Show or set agent mode (/mode auto | /mode ask)
+/plan          Enter planning mode
+/plan-approve  Approve submitted plan
+/plan-reject   Reject plan with feedback
+/model         Switch cloud model
+/ollama        Switch to local Ollama models
+/cache         Show system prompt cache stats
+/ccmine        Show CC_MINE.md preferences
+/usage         Show token usage
+/skills        List available skills
+/skill-install Install skill from URL
+/skill-clear   Clear loaded skill contexts
+/sessions      List saved sessions
+/resume        Resume a session
+/compact       Force context compaction
+/context       Show context stats
+/memory        List memories
+/memory-add    Add a memory
+/memory-search Search memories
+/tasks         List task board
+/crons         List scheduled jobs
+/worktrees     List worktrees
+/debug-status  Show debug failure tracking
+/attachments   List pending attachments
+/image         Attach an image
+/file          Attach a file
+/exit          Quit
+```
+
 ## Architecture
 
 ```
 cc_mine/
-├── main.py              # Agent loop + CLI
-├── config.py            # Configuration + system prompts
-├── call_llm.py          # LLM API wrapper + token counting
-├── executor.py          # Tool handler routing
-├── tool_registry.py     # 38 built-in tool definitions
-├── hooks.py             # Permission + logging + safety hooks
-├── memory.py            # 4-layer context compaction + memory CRUD
-├── ErrorRecovery.py     # Exponential backoff + model fallback
-├── planning.py          # EnterPlanMode / submit / approve
+├── main.py              # Agent loop + REPL
+├── config.py            # Configuration + system prompts + dir setup
+├── call_llm.py          # LLM API wrapper + 3-layer prompt cache
+├── executor.py          # Tool handler routing (38+ handlers)
+├── tool_registry.py     # 38+ built-in tool definitions (OpenAI format)
+├── hooks.py             # Permission + logging + safety hooks (+ git hook)
+├── memory.py            # 4-layer compaction + memory CRUD (user/agent/shared)
+├── planning.py          # EnterPlanMode / submit / approve state machine
 ├── workflow.py          # DAG-based parallel task orchestration
 ├── session.py           # Session save / load / resume
+├── ErrorRecovery.py     # Exponential backoff + model fallback
 ├── log_setup.py         # Console + file logging
+├── terminal_renderer.py # Rich-based unified rendering (15+ render functions)
+├── repl_ui.py           # REPL header + prompt rendering
+├── spinner.py           # 4-state animated spinner (auto GBK/UTF-8)
+├── mode_manager.py      # auto/ask mode toggle
+├── query_queue.py       # Concurrent query handling
+├── skill_context.py     # Persistent skill storage (survives compaction)
+├── skill_installer.py   # Install skills from GitHub/md/zip URLs
+├── debug_tracker.py     # Debug failure tracking + auto web search
 ├── subagent.py          # One-shot subagent (+ async)
 ├── AutonomousAgent.py   # Persistent background teammates
 ├── task.py              # Task board with dependencies
@@ -68,16 +165,47 @@ cc_mine/
 ├── mcp.py               # MCP server integration
 ├── bg_task.py           # Background bash execution
 ├── worktree.py          # Git worktree isolation
-├── skill_load.py        # SKILL.md loader
+├── skill_load.py        # SKILL.md loader + scanner
+├── multimodal.py        # Image/PDF/text file attachments
+├── cli_commands.py      # 25+ slash commands
+├── CC_MINE.md           # User preferences (injected into context)
 ├── skills/              # Pre-packaged skills
-├── tools/
-│   ├── bash.py          # Shell command execution
-│   ├── file_ops.py      # read/write/edit/glob
-│   ├── git.py           # Git operations
-│   ├── todo_write.py    # Visual todo tracking
-│   └── web.py           # Web search + fetch
-└── .env.example         # Environment template
+├── eval/
+│   ├── benchmark.py     # 7-dimension benchmark runner (59 tasks)
+│   ├── suites/          # YAML task definitions per dimension
+│   └── results/         # JSON + Markdown reports
+└── tools/
+    ├── bash.py          # Shell command execution (rendered output)
+    ├── file_ops.py      # read/write/edit/glob (+ Aider-style diff)
+    ├── git.py           # Git operations (rendered output)
+    ├── grep.py          # Pure-Python ripgrep-style search
+    ├── todo_write.py    # Visual todo tracking
+    ├── web.py           # Web search + fetch
+    └── result_renderer.py # Bash/git result formatter
 ```
+
+## Upgrade (June 2026)
+
+16 improvements applied across 4 phases — see [improvement.md](improvement.md) for details.
+
+| # | Improvement | Status |
+|---|-------------|--------|
+| 1 | Prompt cache optimization (3-layer) | ✅ |
+| 2 | CC_MINE.md user preferences | ✅ |
+| 3 | Concurrent query handling | ✅ |
+| 4 | auto/ask mode selection | ✅ |
+| 5 | Tool safety hardening | ✅ |
+| 6 | Rich-based tool UI rendering | ✅ |
+| 7 | Aider-style diff rendering | ✅ |
+| 8 | Skill installation from URLs | ✅ |
+| 9 | Bash/git result rendering | ✅ |
+| 10 | Debug retry + web search | ✅ |
+| 11 | Directory pre-creation | ✅ |
+| 12 | Terminal renderer (Rich) | ✅ |
+| 13 | Spinner state machine | ✅ |
+| 14 | REPL main interface design | ✅ |
+| 15 | Skill context persistence | ✅ |
+| 16 | Memory system (user/agent/shared) | ✅ |
 
 ## License
 

@@ -55,8 +55,24 @@ def list_skills()->str:
         for skill in SKILL_REGISTRY.values())
 
 def load_skill(name: str) -> str:
+    """Load a skill into persistent context. Returns short acknowledgment.
+
+    Skill content is stored in skill_context and injected into the system
+    prompt — it does NOT enter the message history, so it survives compaction.
+    """
+    from skill_context import store_skill_content, is_skill_loaded
+
     skill = SKILL_REGISTRY.get(name)
     if not skill:
         available = ", ".join(SKILL_REGISTRY.keys()) or "(none)"
         return f"Skill not found: {name}. Available: {available}"
-    return skill["content"]
+
+    content = skill["content"]
+    already_loaded = is_skill_loaded(name)
+    store_skill_content(name, content)
+
+    if already_loaded:
+        return (f"Skill '{name}' is already active ({len(content)} chars). "
+                f"Instructions are injected into context.")
+    return (f"Skill '{name}' activated ({len(content)} chars). "
+            f"Instructions injected into system prompt — survives compaction.")

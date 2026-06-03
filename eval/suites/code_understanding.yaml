@@ -1,0 +1,84 @@
+# Code Understanding Suite (weight: 20%)
+# Tests the agent's ability to read, search, and comprehend code.
+dimension: "2. Code Understanding"
+weight: 0.20
+
+tasks:
+  - id: understand_func_def
+    name: "find function definition with grep"
+    judge: grep
+    args:
+      pattern: "def agent_loop"
+      path: "main.py"
+      expected_count: 1
+
+  - id: understand_class_usage
+    name: "find all RecoveryState usages"
+    judge: grep
+    args:
+      pattern: "RecoveryState"
+      path: "."
+      expected_count: 5
+
+  - id: understand_import_graph
+    name: "verify key imports exist"
+    judge: grep
+    args:
+      pattern: "from hooks import"
+      path: "main.py"
+      expected_count: 1
+
+  - id: understand_config_constants
+    name: "config.py defines required constants"
+    judge: grep
+    args:
+      pattern: "MAX_TURNS|CONTEXT_LIMIT|DEFAULT_MAX_TOKENS"
+      path: "config.py"
+      expected_count: 3
+
+  - id: understand_safety_patterns
+    name: "DENY_LIST contains expected patterns"
+    judge: file_contains
+    args:
+      path: "hooks.py"
+      text: "rm -rf /"
+
+  - id: understand_memory_pipeline
+    name: "four compaction layers are defined"
+    judge: grep
+    args:
+      pattern: "def (tool_result_budget|snip_compact|micro_compact|compact_history)"
+      path: "memory.py"
+      expected_count: 4
+
+  - id: understand_spinner_states
+    name: "spinner has 4 states defined"
+    judge: grep
+    args:
+      pattern: "class SpinnerState"
+      path: "spinner.py"
+      expected_count: 1
+
+  - id: understand_tool_count
+    name: "at least 38 tools in registry"
+    judge: python
+    args:
+      code: |
+        from tool_registry import BUILTIN_TOOLS
+        count = len(BUILTIN_TOOLS)
+        _result = "OK" if count >= 38 else f"FAIL: only {count} tools"
+    expected: "OK"
+
+  - id: understand_file_encoding
+    name: "file_ops handles encoding fallback"
+    judge: file_contains
+    args:
+      path: "tools/file_ops.py"
+      text: "_read_file_safe"
+
+  - id: understand_repl_ui
+    name: "REPL UI header function exists"
+    judge: file_contains
+    args:
+      path: "repl_ui.py"
+      text: "render_header"

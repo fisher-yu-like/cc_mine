@@ -1,0 +1,46 @@
+# Task 3: Verify session save/load preserves all data
+name: session-persistence-roundtrip
+description: Save a complex session, load it, verify integrity
+files:
+  - session.py
+  - main.py
+prompt: |
+  Test that session save/load correctly preserves message history and metadata.
+judge:
+  - type: python
+    script: |
+      import sys, json, tempfile, shutil
+      from pathlib import Path
+      sys.path.insert(0, '.')
+      from session import save_session, load_session, delete_session
+      import config
+
+      history = [
+          {"role": "system", "content": "You are cc_mine."},
+          {"role": "user", "content": "你好世界"},
+          {"role": "assistant", "content": "", "tool_calls": [
+              {"id": "call_1", "type": "function",
+               "function": {"name": "bash", "arguments": '{"command":"echo hello"}'}}
+          ]},
+          {"role": "tool", "tool_call_id": "call_1", "name": "bash", "content": "hello"},
+          {"role": "assistant", "content": "命令执行成功，输出 hello"},
+      ]
+      context = {"memories": "test memory", "connected_mcp": [], "active_teammates": []}
+
+      sid = save_session(history, context, config.WORKDIR, "eval_test_session",
+                         "eval roundtrip test")
+      loaded = load_session(config.WORKDIR, "eval_test_session")
+      assert loaded is not None, "load_session returned None"
+      h_loaded, c_loaded = loaded
+
+      assert len(h_loaded) == len(history), f"Message count mismatch: {len(h_loaded)} vs {len(history)}"
+      for i, (orig, loaded_msg) in enumerate(zip(history, h_loaded)):
+          assert orig["role"] == loaded_msg["role"], f"Msg {i} role mismatch"
+          assert orig.get("content") == loaded_msg.get("content"), f"Msg {i} content mismatch"
+          if orig.get("tool_call_id"):
+              assert loaded_msg.get("tool_call_id") == orig["tool_call_id"]
+          if orig.get("tool_calls"):
+              assert len(loaded_msg.get("tool_calls", [])) == len(orig["tool_calls"])
+
+      delete_session(config.WORKDIR, "eval_test_session")
+      print(f"OK: {len(history)} messages roundtripped successfully")

@@ -1,0 +1,12 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.3, pluggy-1.6.0 -- D:\agent\cc_mine\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\agent\cc_mine\calc_bug_fix
+plugins: anyio-4.13.0
+collecting ... collected 3 items
+
+test_math_utils.py::test_normal_division PASSED                          [ 33%]
+test_math_utils.py::test_zero_denominator_raises_valueerror PASSED       [ 66%]
+test_math_utils.py::test_negative_numbers PASSED                         [100%]
+
+============================== 3 passed in 0.01s ==============================

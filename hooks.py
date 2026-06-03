@@ -2,12 +2,25 @@
 
 # Hooks are intentionally outside tool handlers. The loop can add permission,
 # logging, and stop behavior without changing each individual tool.
+#
+# Two roles per event, enforced by the trigger logic:
+#   GATEKEEPER — runs first. If any returns non-None → short-circuit, block action.
+#   OBSERVER   — runs after all gatekeepers pass. Never short-circuits.
+#
+# This guarantees permission checks always run BEFORE logging,
+# regardless of registration order.
+
 import json as _json
 from config import WORKDIR
 from tools.file_ops import safe_path
+from terminal_renderer import render_tool_execution as _render_tc, render_info, render_warning
 
-HOOKS = {"UserPromptSubmit": [], "PreToolUse": [],
-         "PostToolUse": [], "Stop": []}
+HOOKS = {
+    "UserPromptSubmit": {"gatekeepers": [], "observers": []},
+    "PreToolUse":       {"gatekeepers": [], "observers": []},
+    "PostToolUse":      {"gatekeepers": [], "observers": []},
+    "Stop":             {"gatekeepers": [], "observers": []},
+}
 
 
 class _ToolBlock:
@@ -26,21 +39,51 @@ class _ToolBlock:
                 self.input = _json.loads(fn.arguments)
             except (TypeError, _json.JSONDecodeError):
                 self.input = {}
-def register_hook(event:str,callback):
-    HOOKS[event].append(callback)
+def register_hook(event: str, callback, role: str = "observer"):
+    """Register a hook. role='gatekeeper' runs first and can short-circuit; 'observer' always runs."""
+    HOOKS[event][("gatekeepers" if role == "gatekeeper" else "observers")].append(callback)
 
-def trigger_hooks(event:str,*args):
-    for callback in HOOKS[event]:
-        result=callback(*args)
+
+def trigger_hooks(event: str, *args):
+    # 1. Gatekeepers first — any non-None return blocks the action
+    for callback in HOOKS[event]["gatekeepers"]:
+        result = callback(*args)
         if result is not None:
-            return  result
-    return  None
+            return result
+    # 2. Observers second — always run, cannot block
+    for callback in HOOKS[event]["observers"]:
+        callback(*args)
+    return None
 
-DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]
-DESTRUCTIVE = ["rm ", "> /etc/", "chmod 777"]
+DENY_LIST = [
+    "rm -rf /", "rm -rf ~", "rm -rf .",
+    "sudo ", "shutdown", "reboot", "halt",
+    "mkfs", "dd if=", "mkswap",
+    ":(){ :|:& };:",  # fork bomb
+    "chmod 777 /", "chmod -R 777 /",
+    "chmod 777 ~", "chmod -R 777 ~",
+]
+
+DESTRUCTIVE = [
+    "rm ", "> /etc/", ">> /etc/",
+    "chmod 777", "chown ", "chgrp ",
+    "git push --force", "git push -f",
+    "git reset --hard", "git clean -fdx", "git branch -D",
+    "| bash", "| sh", "| /bin/bash", "| /bin/sh",
+    "eval ",
+]
 
 _PERMISSIONS_CACHE = None
 _PERMISSIONS_MTIME = 0
+
+# ── Bash rate limiter ──
+_TOOL_COUNTS: dict[str, int] = {}
+_BASH_MAX_PER_TURN = 50
+
+
+def _reset_tool_counts():
+    """Reset per-turn tool counters. Called at start of each agent turn."""
+    _TOOL_COUNTS.clear()
 
 
 def _load_permissions() -> list[dict]:
@@ -103,6 +146,13 @@ def permission_hook(block):
             if choice not in ("y", "yes"):
                 return "Permission denied by user"
 
+    # 2b. Bash rate limiter — prevent runaway tool call loops
+    if b.name == "bash":
+        _TOOL_COUNTS["bash"] = _TOOL_COUNTS.get("bash", 0) + 1
+        if _TOOL_COUNTS["bash"] > _BASH_MAX_PER_TURN:
+            return (f"Rate limit: max {_BASH_MAX_PER_TURN} bash calls per turn. "
+                    f"Consider batching commands or delegating to a subagent.")
+
     # 3. Path escape check
     if b.name in ("write_file", "edit_file"):
         path = b.input.get("path", "")
@@ -110,6 +160,43 @@ def permission_hook(block):
             safe_path(path)
         except Exception:
             return f"Permission denied: path escapes workspace: {path}"
+
+        # 3b. Sensitive file path check — block writing to protected paths
+        SENSITIVE_PATTERNS = [
+            ".env", ".env.", "credentials", "secrets", "secret",
+            ".ssh/", "id_rsa", "id_ed25519", "id_ecdsa",
+            ".git/config", ".gitmodules",
+            "/etc/passwd", "/etc/shadow", "/etc/hosts",
+        ]
+        path_lower = path.lower().replace("\\", "/")
+        for sp in SENSITIVE_PATTERNS:
+            if sp in path_lower:
+                print(f"\n\033[33m[permission] writing to sensitive path: {path}\033[0m")
+                print(f"  Matches sensitive pattern: {sp}")
+                choice = input("  Allow? [y/N] ").strip().lower()
+                if choice not in ("y", "yes"):
+                    return f"Permission denied: writing to sensitive path '{path}'"
+
+    # 3c. Ask mode check (if mode_manager is available)
+    try:
+        from mode_manager import get_mode, ASK_TOOLS
+        mode = get_mode()
+        if mode == "ask" and b.name in ASK_TOOLS:
+            desc = _describe_tool(b)
+            print(f"\n\033[33m[ask mode] About to execute:\033[0m")
+            print(f"  {desc}")
+            print(f"  \033[90mAllow? [y/N/auto] \033[0m", end="")
+            choice = input().strip().lower()
+            if choice == "auto":
+                from mode_manager import set_mode
+                set_mode("auto")
+                print(f"  \033[32mSwitched to auto mode. Proceeding.\033[0m")
+            elif choice in ("y", "yes"):
+                pass  # allow this one
+            else:
+                return "Permission denied by user (ask mode)"
+    except ImportError:
+        pass  # mode_manager not installed yet
 
     # 4. MCP deploy check
     if b.name.startswith("mcp__") and "deploy" in b.name:
@@ -119,6 +206,40 @@ def permission_hook(block):
             return "Permission denied by user"
 
     return None
+
+def git_safety_hook(block):
+    """Gatekeeper: block destructive git operations unless explicitly allowed."""
+    b = _ToolBlock(block)
+    if b.name not in ("bash", "git"):
+        return None
+
+    cmd = b.input.get("command", "")
+    if b.name == "git":
+        # Build command string from args list
+        args = b.input.get("args", [])
+        cmd = "git " + " ".join(args)
+
+    GIT_DESTRUCTIVE = [
+        ("git push --force", "force push to remote"),
+        ("git push -f", "force push to remote"),
+        ("git push --delete", "delete remote branch"),
+        ("git reset --hard", "hard reset (discards changes)"),
+        ("git clean -fdx", "clean all untracked files"),
+        ("git branch -D", "force delete branch"),
+        ("git stash drop", "drop stashed changes"),
+        ("git rebase --onto", "potentially destructive rebase"),
+    ]
+    for pattern, desc in GIT_DESTRUCTIVE:
+        if pattern in cmd:
+            print(f"\n\033[33m[git safety] Destructive git operation: {desc}\033[0m")
+            print(f"  {cmd[:120]}")
+            choice = input("  Allow? [y/N] ").strip().lower()
+            if choice not in ("y", "yes"):
+                return f"Git operation denied: {desc}"
+            return None  # explicitly allowed
+
+    return None
+
 
 def _describe_tool(b):
     """Return a human-readable one-liner describing what a tool call is doing."""
@@ -150,6 +271,10 @@ def _describe_tool(b):
     elif tool == "glob":
         pat = a.get("pattern", a.get("path", "?"))
         return f"glob: {YELLOW}{pat}{RST}"
+    elif tool == "grep":
+        pat = a.get("pattern", "?")
+        fp = a.get("path", ".")
+        return f"grep: /{pat}/ in {YELLOW}{fp}{RST}"
     elif tool == "todo_write":
         todos = a.get("todos") or []
         active = sum(1 for t in todos if t.get("status") == "in_progress")
@@ -178,7 +303,11 @@ def _describe_tool(b):
     elif tool == "schedule_cron":
         return f"cron: {a.get('cron', '?')} — {str(a.get('prompt', ''))[:40]}"
     elif tool == "connect_mcp":
-        return f"mcp: {a.get('name', '?')}"
+        return f"+mcp: {a.get('name', '?')}"
+    elif tool == "disconnect_mcp":
+        return f"-mcp: {a.get('name', '?')}"
+    elif tool == "list_mcp_servers":
+        return "list MCP servers"
     elif tool == "load_skill":
         return f"skill: {a.get('name', '?')}"
     elif tool == "compact":
@@ -194,7 +323,7 @@ def _describe_tool(b):
 def log_hook(block):
     b = _ToolBlock(block)
     desc = _describe_tool(b)
-    print(f"  \033[36m[{b.name}]\033[0m {desc}")
+    _render_tc(b.name, desc)
     return None
 
 
@@ -202,9 +331,9 @@ def large_output_hook(block, output):
     b = _ToolBlock(block)
     size = len(str(output))
     if size > 100000:
-        print(f"  \033[33m[large output] {b.name}: {size} chars ({size//1024}KB)\033[0m")
+        render_warning(f"large output {b.name}: {size} chars ({size//1024}KB)")
     elif size > 10000:
-        print(f"  \033[90m[output] {b.name}: {size} chars\033[0m")
+        render_info(f"output {b.name}: {size} chars")
     return None
 
 
@@ -215,11 +344,12 @@ def user_prompt_hook(query: str):
 def stop_hook(messages: list):
     tool_count = sum(1 for msg in messages if msg.get("role") == "tool")
     assistant_count = sum(1 for msg in messages if msg.get("role") == "assistant")
-    print(f"  \033[90m[turn end] {assistant_count} responses, {tool_count} tool results\033[0m")
+    render_info(f"turn end: {assistant_count} responses, {tool_count} tool results")
     return None
 
-register_hook("UserPromptSubmit", user_prompt_hook)
-register_hook("PreToolUse", permission_hook)
-register_hook("PreToolUse", log_hook)
-register_hook("PostToolUse", large_output_hook)
-register_hook("Stop", stop_hook)
+register_hook("UserPromptSubmit", user_prompt_hook, role="observer")
+register_hook("PreToolUse", permission_hook, role="gatekeeper")
+register_hook("PreToolUse", git_safety_hook, role="gatekeeper")
+register_hook("PreToolUse", log_hook, role="observer")
+register_hook("PostToolUse", large_output_hook, role="observer")
+register_hook("Stop", stop_hook, role="observer")

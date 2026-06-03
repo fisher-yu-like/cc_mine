@@ -1,0 +1,53 @@
+# Task 2: Verify context compaction preserves message integrity
+name: context-compaction-safety
+description: Compaction must not break assistant/tool message pairings
+files:
+  - memory.py
+  - main.py
+prompt: |
+  Test that compact_history and _strip_orphan_tools correctly handle
+  message lists with tool_calls/tool pairs. Verify no orphan messages remain
+  after compaction.
+judge:
+  - type: python
+    script: |
+      import sys
+      sys.path.insert(0, '.')
+      from memory import compact_history, _strip_orphan_tools, prepare_context, estimate_size
+      import json
+
+      # Build a realistic message sequence with tool_calls
+      msgs = [
+          {"role": "system", "content": "You are a coder."},
+          {"role": "user", "content": "Fix the bug"},
+          {"role": "assistant", "content": "", "tool_calls": [
+              {"id": "call_1", "type": "function",
+               "function": {"name": "read_file", "arguments": '{"path":"test.py"}'}}
+          ]},
+          {"role": "tool", "tool_call_id": "call_1", "name": "read_file", "content": "file content"},
+          {"role": "assistant", "content": "", "tool_calls": [
+              {"id": "call_2", "type": "function",
+               "function": {"name": "bash", "arguments": '{"command":"ls"}'}}
+          ]},
+          {"role": "tool", "tool_call_id": "call_2", "name": "bash", "content": "output"},
+      ]
+
+      # Test _strip_orphan_tools keeps paired messages
+      cleaned = _strip_orphan_tools(list(msgs))
+      assert len(cleaned) == len(msgs), f"Should keep all {len(msgs)} paired msgs, got {len(cleaned)}"
+
+      # Test without a tool message — tool_calls should be stripped
+      orphan_assistant = list(msgs)
+      orphan_assistant.pop(5)  # remove the bash tool result
+      cleaned = _strip_orphan_tools(orphan_assistant)
+      for msg in cleaned:
+          if msg.get("role") == "assistant" and msg.get("tool_calls"):
+              # Only call_1's tool is present, call_2 should be stripped
+              ids = {tc['id'] for tc in msg['tool_calls']}
+              assert "call_2" not in ids, f"Orphan call_2 should be stripped, got {ids}"
+
+      # Test prepare_context doesn't break messages
+      result = prepare_context(list(msgs))
+      assert len(result) > 0, "prepare_context should return non-empty list"
+
+      print("OK: compaction preserves message integrity")

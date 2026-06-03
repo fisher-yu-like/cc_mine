@@ -2,13 +2,15 @@ from AutonomousAgent import spawn_teammate_thread
 from CronScheduler import run_schedule_cron, run_list_crons, run_cancel_cron
 from MessageBus import BUS
 from ProtocolState import consume_lead_inbox, new_request_id, pending_requests, ProtocolState
-from mcp import connect_mcp
+from mcp import connect_mcp, disconnect_mcp, list_mcp_servers
 from memory import compact_history, add_memory, search_memory, delete_memory
+from skill_installer import install_skill_from_url
 from skill_load import load_skill
 from subagent import spawn_subagent, spawn_subagent_async
 from task import create_task, list_tasks, get_task_json, claim_task, complete_task
 from tools.bash import run_bash
 from tools.file_ops import run_read, run_write, run_edit, run_glob
+from tools.grep import run_grep
 from tools.todo_write import run_todo_write
 from tools.web import run_web_search, run_web_fetch
 from call_llm import call_llm_structured
@@ -134,6 +136,7 @@ BUILTIN_HANDLERS = {
     "write_file": run_write,
     "edit_file": run_edit,
     "glob": run_glob,
+    "grep": run_grep,
     "todo_write": run_todo_write,
     "task": lambda description, run_in_background=False: (
         spawn_subagent_async(description) if run_in_background
@@ -159,11 +162,14 @@ BUILTIN_HANDLERS = {
     "remove_worktree": run_remove_worktree,
     "keep_worktree": run_keep_worktree,
     "connect_mcp": run_connect_mcp,
+    "disconnect_mcp": disconnect_mcp,
+    "list_mcp_servers": list_mcp_servers,
     "web_search": run_web_search,
     "web_fetch": run_web_fetch,
-    "add_memory": lambda title, content, tags="": add_memory(title, content, tags),
+    "add_memory": lambda title, content, tags="", source="agent": add_memory(title, content, tags, source),
     "search_memory": search_memory,
     "delete_memory": delete_memory,
+    "install_skill": lambda url, name="": install_skill_from_url(url, name),
     "structured_output": lambda prompt, schema, strict=True:
         call_llm_structured(prompt, schema, _RS(), strict),
     "enter_plan_mode": enter_plan_mode,

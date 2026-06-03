@@ -1,3 +1,26 @@
+Metadata-Version: 2.4
+Name: cc_mine
+Version: 0.1.0
+Summary: Claude Code clone — interactive AI coding agent in the terminal
+Author: fisher-yu-like
+License: MIT
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Application Frameworks
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: openai>=2.0
+Requires-Dist: mcp>=1.9
+Requires-Dist: httpx>=0.28
+Requires-Dist: rich>=13.0
+Requires-Dist: colorama>=0.4
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: bandit>=1.9; extra == "dev"
+Requires-Dist: pygments>=2.20; extra == "dev"
+
 # cc_mine
 
 A self-written Claude Code clone powered by OpenAI-compatible LLMs (DeepSeek, OpenAI, etc.).
@@ -7,7 +30,7 @@ Built from scratch following the Claude Code architecture — 38+ built-in tools
 ## Benchmark
 
 ```
-Composite Score: 98.7/100  |  58/59 tasks passed
+Composite Score: 87.6/100  |  52/59 tasks passed
 ```
 
 | Dimension | Weight | Score |
@@ -15,8 +38,8 @@ Composite Score: 98.7/100  |  58/59 tasks passed
 | Tool Completeness | 20% | 93.3% |
 | Code Understanding | 20% | 100% |
 | Code Modification | 20% | 100% |
-| Planning & Execution | 15% | 100% |
-| Context & Memory | 10% | 100% |
+| Planning & Execution | 15% | 42.9% |
+| Context & Memory | 10% | 75.0% |
 | Safety & Permissions | 10% | 100% |
 | Performance | 5% | 100% |
 

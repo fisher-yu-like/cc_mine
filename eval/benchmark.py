@@ -207,7 +207,7 @@ def load_suite(suite_name: str) -> dict | None:
     path = SUITES_DIR / f"{suite_name}.yaml"
     if not path.exists():
         return None
-    with path.open(encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

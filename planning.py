@@ -216,20 +216,21 @@ def submit_plan(plan_text: str, steps: list[dict], details: str = "") -> str:
         md_path.write_text(md_content, encoding="utf-8")
 
     # Display to user — no blocking input()
-    print(f"\n  \033[33m" + "=" * 60 + "\033[0m")
-    print(f"  \033[33m  📋 PLAN SUBMITTED — awaiting your approval\033[0m")
-    print(f"  \033[33m" + "=" * 60 + "\033[0m")
+    sep = "\033[33m" + "=" * 60 + "\033[0m"
+    print(f"\n  {sep}")
+    print(f"  \033[33m  [PLAN] SUBMITTED -- awaiting your approval\033[0m")
+    print(f"  {sep}")
     print(f"  Goal: {plan_text[:200]}")
     if md_path:
-        print(f"\n  \033[36m  📄 Plan file:\033[0m {md_path}")
-        print(f"  \033[36m     → Open this file in your IDE to review and edit\033[0m")
+        print(f"\n  \033[36m  [file] Plan file:\033[0m {md_path}")
+        print(f"  \033[36m        -> Open this file in your IDE to review and edit\033[0m")
     print(f"\n  Steps ({len(steps)}):")
     for i, s in enumerate(steps):
         print(f"    {i+1}. {s.get('description', str(s))[:100]}")
-    print(f"\n  \033[32m  ✅ /plan-approve  — approve & execute (reads your edits)\033[0m")
-    print(f"  \033[31m  ❌ /plan-reject [feedback]  — reject or request revision\033[0m")
-    print(f"  \033[90m  💡 Tip: Edit the .md file before approving to customize the plan\033[0m")
-    print(f"  \033[33m" + "=" * 60 + "\033[0m\n")
+    print(f"\n  \033[32m  [OK] /plan-approve  -- approve & execute (reads your edits)\033[0m")
+    print(f"  \033[31m  [X] /plan-reject [feedback]  -- reject or request revision\033[0m")
+    print(f"  \033[90m  [i] Tip: Edit the .md file before approving to customize the plan\033[0m")
+    print(f"  {sep}\n")
 
     return (
         f"Plan submitted and saved as {_current_plan.plan_id}. "

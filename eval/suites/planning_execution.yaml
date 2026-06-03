@@ -77,17 +77,18 @@ tasks:
       code: |
         from task import create_task, list_tasks, claim_task, complete_task
 
-        tid = create_task("bench test", "test task for benchmark")
+        t = create_task("bench test", "test task for benchmark")
+        tid = t.id
         tasks = list_tasks()
         ok1 = any(t.id == tid for t in tasks)
 
         claim_task(tid, "bench-agent")
-        t = list_tasks()
-        ok2 = any(t.status == "in_progress" for t in t if t.id == tid)
+        tasks = list_tasks()
+        ok2 = any(t.status == "in_progress" for t in tasks if t.id == tid)
 
         complete_task(tid)
-        t = list_tasks()
-        ok3 = any(t.status == "completed" for t in t if t.id == tid)
+        tasks = list_tasks()
+        ok3 = any(t.status == "completed" for t in tasks if t.id == tid)
 
         _result = "OK" if (ok1 and ok2 and ok3) else f"FAIL: {ok1}/{ok2}/{ok3}"
     expected: "OK"
@@ -98,9 +99,10 @@ tasks:
     args:
       code: |
         from CronScheduler import validate_cron
-        ok1 = validate_cron("*/5 * * * *")    # every 5 min
-        ok2 = validate_cron("0 9 * * 1-5")    # weekdays 9am
-        bad = not validate_cron("invalid cron")
+        # Returns None for valid, error string for invalid
+        ok1 = validate_cron("*/5 * * * *") is None
+        ok2 = validate_cron("0 9 * * 1-5") is None
+        bad = validate_cron("invalid cron") is not None
         _result = "OK" if (ok1 and ok2 and bad) else f"FAIL: {ok1}/{ok2}/{bad}"
     expected: "OK"
 
@@ -120,12 +122,14 @@ tasks:
     judge: python
     args:
       code: |
+        from pathlib import Path
         from session import save_session, load_session, delete_session
         test_messages = [{"role": "user", "content": "test"}, {"role": "assistant", "content": "response"}]
         test_context = {"memories": "test"}
-        save_session(test_messages, test_context, ".", "bench_test_session", "benchmark")
-        loaded_msgs, loaded_ctx = load_session(".", "bench_test_session")
-        ok = len(loaded_msgs) == 2 and loaded_ctx.get("memories") == "test"
-        delete_session(".", "bench_test_session")
-        _result = "OK" if ok else f"FAIL: msgs={len(loaded_msgs)} ctx={loaded_ctx}"
+        wd = Path(".")
+        save_session(test_messages, test_context, wd, "bench_test_session", "benchmark")
+        loaded = load_session(wd, "bench_test_session")
+        ok = loaded is not None and len(loaded[0]) == 2
+        delete_session(wd, "bench_test_session")
+        _result = "OK" if ok else f"FAIL: msgs={len(loaded[0]) if loaded else 0}"
     expected: "OK"

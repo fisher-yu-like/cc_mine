@@ -1,0 +1,91 @@
+{
+  "benchmark": "cc_mine",
+  "timestamp": "2026-06-03T23:58:13.898971",
+  "composite_score": 12.9,
+  "total_seconds": 1.7,
+  "total_tasks": 7,
+  "total_passed": 6,
+  "suites": [
+    {
+      "suite": "planning_execution",
+      "dimension": "4. Planning & Execution",
+      "weight": 0.15,
+      "pass_rate": 0.8571,
+      "avg_score": 0.8571,
+      "duration_ms": 1652.0,
+      "task_count": 7
+    }
+  ],
+  "tasks": [
+    {
+      "suite": "planning_execution",
+      "id": "plan_state_transitions",
+      "name": "planning state machine complete cycle",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 8.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_readonly_enforcement",
+      "name": "planning mode enforces read-only",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 0.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_workflow_dag",
+      "name": "workflow DAG engine basic flow",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 1631.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_task_board_crud",
+      "name": "task board create/list/claim/complete",
+      "passed": false,
+      "score": 0.0,
+      "duration_ms": 5.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_cron_validation",
+      "name": "cron expression validation works",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 2.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_message_bus",
+      "name": "inter-agent message passing works",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 2.0,
+      "details": "",
+      "error": ""
+    },
+    {
+      "suite": "planning_execution",
+      "id": "plan_session_persistence",
+      "name": "session save and load roundtrip",
+      "passed": true,
+      "score": 1.0,
+      "duration_ms": 4.0,
+      "details": "",
+      "error": ""
+    }
+  ]
+}

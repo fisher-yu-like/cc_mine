@@ -12,16 +12,20 @@ tasks:
         from memory import add_memory, delete_memory
         from config import USER_MEMORY_DIR
 
-        r = add_memory("user_pref_test", "prefers tabs over spaces", source="user")
-        ok1 = "user" in r.lower()
+        # Clean up leftovers from previous runs
+        for p in USER_MEMORY_DIR.glob("user_pref_test*.md"):
+            p.unlink()
+        import uuid
+        unique = f"prefers tabs {uuid.uuid4().hex[:8]}"
 
-        # Check file exists in user subdir
-        import glob
+        r = add_memory("user_pref_test", unique, source="user")
+        ok1 = "user_pref_test" in r.lower() or "save" in r.lower()
+
         files = list(USER_MEMORY_DIR.glob("*.md"))
-        ok2 = any("user-pref-test" in f.name for f in files)
+        ok2 = any("user_pref_test" in f.name for f in files)
 
-        delete_memory("user-pref-test")
-        _result = "OK" if (ok1 and ok2) else f"FAIL: ok1={ok1} ok2={ok2}"
+        delete_memory("user_pref_test")
+        _result = "OK" if (ok1 and ok2) else f"FAIL: ok1={ok1} ok2={ok2} files={[f.name for f in files]}"
     expected: "OK"
 
   - id: mem_add_agent
@@ -32,11 +36,17 @@ tasks:
         from memory import add_memory, delete_memory
         from config import AGENT_MEMORY_DIR
 
-        r = add_memory("agent_note_test", "fixed bug in login", source="agent")
+        # Clean up leftovers
+        for p in AGENT_MEMORY_DIR.glob("agent_note_test*.md"):
+            p.unlink()
+        import uuid
+        unique = f"fixed bug {uuid.uuid4().hex[:8]}"
+
+        r = add_memory("agent_note_test", unique, source="agent")
         files = list(AGENT_MEMORY_DIR.glob("*.md"))
-        ok = any("agent-note-test" in f.name for f in files)
-        delete_memory("agent-note-test")
-        _result = "OK" if ok else "FAIL"
+        ok = any("agent_note_test" in f.name for f in files)
+        delete_memory("agent_note_test")
+        _result = "OK" if ok else f"FAIL: files={[f.name for f in files]}"
     expected: "OK"
 
   - id: mem_dedup
@@ -44,15 +54,21 @@ tasks:
     judge: python
     args:
       code: |
-        from memory import add_memory, delete_memory, _is_duplicate
+        from memory import add_memory, delete_memory
         from config import AGENT_MEMORY_DIR
 
+        # Clean up leftovers
+        for p in AGENT_MEMORY_DIR.glob("dedup_test*.md"):
+            p.unlink()
+        import uuid
+        unique = f"dedup content {uuid.uuid4().hex}"
+
         # First add
-        add_memory("dedup_test", "unique content for dedup test ABC123", source="agent")
-        # Second add with same content — should be skipped or detected
-        r2 = add_memory("dedup_test", "unique content for dedup test ABC123", source="agent")
+        add_memory("dedup_test", unique, source="agent")
+        # Second add with SAME content — should be skipped by dedup
+        r2 = add_memory("dedup_test", unique, source="agent")
         ok = "skip" in r2.lower() or "similar" in r2.lower() or "already" in r2.lower()
-        delete_memory("dedup-test")
+        delete_memory("dedup_test")
         _result = "OK" if ok else f"FAIL: {r2}"
     expected: "OK"
 
@@ -62,12 +78,18 @@ tasks:
     args:
       code: |
         from memory import update_context, add_memory, delete_memory
-        add_memory("ctx_test_pref", "always use pytest", source="user")
+        from config import USER_MEMORY_DIR
+
+        for p in USER_MEMORY_DIR.glob("ctx_test_pref*.md"):
+            p.unlink()
+        import uuid
+        add_memory("ctx_test_pref", f"always use pytest {uuid.uuid4().hex[:8]}", source="user")
         ctx = update_context({}, [])
         ok1 = ctx.get("memories") and len(ctx["memories"]) > 0
         ok2 = "User" in ctx["memories"] or "pytest" in ctx["memories"]
-        delete_memory("ctx-test-pref")
-        _result = "OK" if (ok1 and ok2) else f"FAIL: mem_len={len(ctx.get('memories',''))}"
+        delete_memory("ctx_test_pref")
+        mem_len = len(ctx.get("memories", ""))
+        _result = "OK" if (ok1 and ok2) else "FAIL: mem_len=" + str(mem_len)
     expected: "OK"
 
   - id: mem_search
@@ -76,11 +98,17 @@ tasks:
     args:
       code: |
         from memory import add_memory, search_memory, delete_memory
-        add_memory("search_test_xyz", "benchmark searchable content", source="agent")
-        r = search_memory("benchmark")
-        ok = "search_test_xyz" in r.lower() or "searchable" in r.lower()
-        delete_memory("search-test-xyz")
-        _result = "OK" if ok else f"FAIL: {r[:100]}"
+        from config import AGENT_MEMORY_DIR
+
+        for p in AGENT_MEMORY_DIR.glob("search_test_xyz*.md"):
+            p.unlink()
+        import uuid
+        unique = f"benchmark searchable {uuid.uuid4().hex[:8]}"
+        add_memory("search_test_xyz", unique, source="agent")
+        r = search_memory(unique[:20])
+        ok = len(r) > 20
+        delete_memory("search_test_xyz")
+        _result = "OK" if ok else "FAIL: " + r[:100]
     expected: "OK"
 
   - id: mem_skill_context

@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cc_mine"
+version = "0.1.0"
+description = "Claude Code clone — interactive AI coding agent in the terminal"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+readme = "README.md"
+authors = [
+    {name = "fisher-yu-like"},
+]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+dependencies = [
+    "openai>=2.0",
+    "mcp>=1.9",
+    "httpx>=0.28",
+    "rich>=13.0",
+    "colorama>=0.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "bandit>=1.9",
+    "pygments>=2.20",
+]
+
+[project.scripts]
+cc_mine = "cc_mine_cli:main"
+
+[tool.setuptools]
+# Flat layout: project root contains top-level .py modules
+py-modules = [
+    "AutonomousAgent",
+    "CronScheduler",
+    "ErrorRecovery",
+    "MessageBus",
+    "ProtocolState",
+    "bg_task",
+    "call_llm",
+    "cc_mine_cli",
+    "cli_commands",
+    "config",
+    "debug_tracker",
+    "executor",
+    "hello",
+    "hooks",
+    "log_setup",
+    "main",
+    "mcp",
+    "memory",
+    "mode_manager",
+    "multimodal",
+    "planning",
+    "query_queue",
+    "repl_ui",
+    "session",
+    "skill_context",
+    "skill_installer",
+    "skill_load",
+    "spinner",
+    "subagent",
+    "task",
+    "terminal_renderer",
+    "tool_registry",
+    "workflow",
+    "worktree",
+]
+
+[tool.setuptools.packages.find]
+# Sub-packages
+include = ["tools*", "eval*", "calc_bug_fix*"]

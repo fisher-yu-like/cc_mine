@@ -279,7 +279,27 @@ def cron_autorun_loop(history: list, context: dict):
             context.update(update_context(context, history))
             print_turn_assistants(history, turn_start)
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None):
+    """Main entry point — called from CLI or programmatic use."""
+
+    # ── Parse arguments FIRST (before any setup that depends on workdir) ──
+    import argparse
+    ap = argparse.ArgumentParser(description="cc_mine - a Claude Code clone")
+    ap.add_argument("--workdir", default=None, help="Working directory")
+    ap.add_argument("--model", default=None, help="Override PRIMARY_MODEL")
+    ap.add_argument("--resume", default=None, help="Resume a saved session by ID")
+    ap.add_argument("--session-label", default="", help="Label for auto-saved session")
+    ap.add_argument("--yes", "-y", default=False, action="store_true", help="Skip prompts, auto-resume latest session")
+    ap.add_argument("--new", default=False, action="store_true", help="Start fresh, skip session resume")
+    args = ap.parse_args(argv)
+
+    if args.workdir:
+        config.WORKDIR = Path(args.workdir).resolve()
+    if args.model:
+        import os
+        os.environ["PRIMARY_MODEL"] = args.model
+
+    # ── Setup after arg parsing ──
     from log_setup import setup_logging, get_logger
     setup_logging(config.WORKDIR)
     log = get_logger()
@@ -291,45 +311,42 @@ if __name__ == "__main__":
     from planning import init_planning
     init_planning(config.WORKDIR)
 
-    import argparse
-    ap = argparse.ArgumentParser(description="cc_mine - a Claude Code clone")
-    ap.add_argument("--workdir", default=None, help="Working directory")
-    ap.add_argument("--model", default=None, help="Override PRIMARY_MODEL")
-    ap.add_argument("--resume", default=None, help="Resume a saved session by ID")
-    ap.add_argument("--session-label", default="", help="Label for auto-saved session")
-    args = ap.parse_args()
-
-    if args.workdir:
-        config.WORKDIR = Path(args.workdir).resolve()
-    if args.model:
-        import os
-        os.environ["PRIMARY_MODEL"] = args.model
-
     # ── Session resume ──
     from session import load_session, latest_session, save_session, get_last_crash, clear_crash_flag
     session_id = args.resume
 
+    # Priority 0: --new flag skips all resume
+    if args.new:
+        session_id = None
+
     # Priority 1: detect crashed session → auto-prompt
-    if session_id is None:
+    if session_id is None and not args.new:
         crashed_sid = get_last_crash(config.WORKDIR)
         if crashed_sid:
             print(f"\n  \033[31m[!] Detected crashed session: {crashed_sid}\033[0m")
             print(f"  The previous run was interrupted by an error. Your task progress was saved.")
-            choice = input(f"  Resume crashed session? [Y/n] ").strip().lower()
-            if choice in ("", "y", "yes"):
+            if args.yes:
                 session_id = crashed_sid
                 clear_crash_flag(config.WORKDIR)
             else:
-                print(f"  Starting fresh. Crashed session kept for later recovery.\n")
+                choice = input(f"  Resume crashed session? [Y/n] ").strip().lower()
+                if choice in ("", "y", "yes"):
+                    session_id = crashed_sid
+                    clear_crash_flag(config.WORKDIR)
+                else:
+                    print(f"  Starting fresh. Crashed session kept for later recovery.\n")
 
     # Priority 2: check for latest session
-    if session_id is None:
+    if session_id is None and not args.new:
         latest = latest_session(config.WORKDIR)
         if latest:
-            print(f"Latest session: {latest}")
-            choice = input("Resume? [Y/n] ").strip().lower()
-            if choice in ("", "y", "yes"):
+            if args.yes:
                 session_id = latest
+            else:
+                print(f"Latest session: {latest}")
+                choice = input("Resume? [Y/n] ").strip().lower()
+                if choice in ("", "y", "yes"):
+                    session_id = latest
 
     #运行主函数
     config.CLI_ACTIVE = True
@@ -444,3 +461,7 @@ if __name__ == "__main__":
             history.append({"role": "user",
                             "content": f"[Inbox]\n{inbox_text}"})
         print()
+
+
+if __name__ == "__main__":
+    main()

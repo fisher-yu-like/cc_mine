@@ -1,0 +1,2 @@
+[console_scripts]
+cc_mine = cc_mine_cli:main

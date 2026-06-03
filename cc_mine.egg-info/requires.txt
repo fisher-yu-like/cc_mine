@@ -1,0 +1,10 @@
+openai>=2.0
+mcp>=1.9
+httpx>=0.28
+rich>=13.0
+colorama>=0.4
+
+[dev]
+pytest>=8
+bandit>=1.9
+pygments>=2.20

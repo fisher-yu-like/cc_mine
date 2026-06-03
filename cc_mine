@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# cc_mine — Launch the interactive AI coding agent
+# Usage: ./cc_mine [args...]
+# Add this directory to PATH for global access.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PYTHON="${SCRIPT_DIR}/.venv/Scripts/python.exe"
+# Fallback for Unix-like venv layout
+if [ ! -f "$VENV_PYTHON" ]; then
+    VENV_PYTHON="${SCRIPT_DIR}/.venv/bin/python"
+fi
+
+if [ ! -f "$VENV_PYTHON" ]; then
+    echo "[cc_mine] Virtual environment not found."
+    echo "[cc_mine] Create one: python -m venv .venv"
+    exit 1
+fi
+
+exec "$VENV_PYTHON" -m cc_mine_cli "$@"

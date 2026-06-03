@@ -91,7 +91,7 @@ def complete_task(task_id:str)->str:
     task.status="completed"
     save_task(task)
     unblocked=[t.subject for t in list_tasks() if t.status=="pending"and t.blockedBy and can_start(t.id)]
-    print(f"  \033[32m[complete] {task.subject} ✓\033[0m")
+    print(f"  \033[32m[complete] {task.subject} [OK]\033[0m")
     msg = f"Completed {task.id} ({task.subject})"
     if unblocked:
         msg += f"\nUnblocked: {', '.join(unblocked)}"

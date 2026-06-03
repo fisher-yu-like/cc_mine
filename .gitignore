@@ -1,0 +1,29 @@
+# Environment - contains real API keys
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Runtime data
+.cc_mine/logs/
+.cc_mine/sessions/
+.cc_mine/plans/
+.transcripts/
+.task_outputs/
+.mailboxes/
+.worktrees/
+.scheduled_tasks.json
+
+# OS
+Thumbs.db
+.DS_Store

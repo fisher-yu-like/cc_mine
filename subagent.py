@@ -1,0 +1,279 @@
+import json
+import os
+
+from MessageBus import BUS
+from config import IDLE_POLL_INTERVAL, IDLE_TIMEOUT, WORKDIR, TASKS_DIR, PROMPT_SECTIONS
+from tool_registry import call_tool_handler
+from hooks import trigger_hooks
+from task import can_start
+from tools.bash import run_bash
+from tools.file_ops import run_read, run_write, run_edit, run_glob
+from tools.todo_write import run_todo_write
+from call_llm import  client
+# ── Subagent Tool (OpenAI Format) ──
+
+# 子智能体的系统提示词，从 config 注入统一的 subagent 身份
+SUB_SYSTEM = PROMPT_SECTIONS.get("subagent_identity", (
+    f"You are a coding subagent at {WORKDIR}. "
+    "Complete the task, then return a concise final summary. "
+    "Do not spawn more agents."
+))
+
+# 核心重构：完全对齐 OpenAI Tools 规范的子智能体工具箱
+SUB_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Run a shell command.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"}
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read file contents.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "limit": {"type": "integer"},
+                    "offset": {"type": "integer"}
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write content to a file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"}
+                },
+                "required": ["path", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": "Replace exact text in a file once.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "old_text": {"type": "string"},
+                    "new_text": {"type": "string"}
+                },
+                "required": ["path", "old_text", "new_text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "glob",
+            "description": "Find files matching a glob pattern.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string"}
+                },
+                "required": ["pattern"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "todo_write",
+            "description": "Track your sub-steps for this task. Keep one item in_progress at a time.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "content": {"type": "string"},
+                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}
+                            },
+                            "required": ["content", "status"]
+                        }
+                    }
+                },
+                "required": ["todos"]
+            }
+        }
+    }
+]
+
+# 纯明文路由映射表，保持原样即可
+SUB_HANDLERS = {
+    "bash": run_bash,
+    "read_file": run_read,
+    "write_file": run_write,
+    "edit_file": run_edit,
+    "glob": run_glob,
+    "todo_write": run_todo_write,
+}
+
+
+def extract_text(content) -> str:
+    """
+    OpenAI 格式下，content 通常就是一个纯字符串。
+    为了兼容不同的历史结构，如果不是字符串则强转。
+    """
+    if isinstance(content, str):
+        return content.strip()
+    return str(content).strip()
+
+
+# ── 2. 工具调用判断函数 (OpenAI 适配版) ──
+def has_tool_use(choice_message) -> bool:
+    """
+    检查 OpenAI 的 Choice Message 对象中是否包含有效的工具调用列表。
+    """
+    return bool(getattr(choice_message, "tool_calls", None))
+
+
+# ── 3. 子智能体孵化主函数 (OpenAI 适配版) ──
+def spawn_subagent(description: str) -> str:
+    # 消息队列初始化
+    messages = [
+        {"role": "system", "content": SUB_SYSTEM},  # 显式注入子智能体专属人格
+        {"role": "user", "content": description}
+    ]
+
+    # 严格限流：最多允许子智能体连续思考、交互 30 轮，防止死循环烧干 Token
+    for _ in range(30):
+        try:
+            # 呼叫 OpenAI 接口
+            response = client.chat.completions.create(
+                model=os.getenv("PRIMARY_MODEL"),
+                messages=messages,
+                tools=SUB_TOOLS,  # 喂给它专属的简易工具箱（如 bash、read_file）
+                max_tokens=4000
+            )
+        except Exception as e:
+            return f"Subagent execution failed on API error: {str(e)}"
+
+        choice = response.choices[0].message
+        tool_calls = choice.tool_calls
+
+        # 核心合拢：将 assistant 回复（含 tool_calls）转为纯 dict 塞进历史
+        messages.append({
+            "role": "assistant",
+            "content": choice.content or "",
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": getattr(tc, "type", "function"),
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                }
+                for tc in (tool_calls or [])
+            ] if tool_calls else None
+        })
+
+        # 【收尾条件】如果大模型这一轮不打算用工具了，说明任务已做完，直接打破循环
+        if not tool_calls:
+            break
+
+        # 准备收集这一轮并行的所有工具执行结果
+        for tool_call in tool_calls:
+            t_name = tool_call.function.name
+            t_id = tool_call.id
+            # OpenAI 下发的 arguments 是纯文本字符串，必须明文用 json.loads 解包
+            t_args = json.loads(tool_call.function.arguments)
+
+            # ⚙️ 核心拦截点：前置钩子（AOP 面向切面设计）
+            # 可以在这里做安全审计，例如：如果是 bash 工具且包含 "rm -rf"，直接拒绝
+            blocked = trigger_hooks("PreToolUse", tool_call)
+
+            if blocked:
+                output = str(blocked)
+            else:
+                # 正常执行：通过路由表找到对应的真实本地 Python 函数
+                handler = SUB_HANDLERS.get(t_name)
+                output = call_tool_handler(handler, t_args, t_name)
+
+                # ⚙️ 核心拦截点：后置钩子
+                trigger_hooks("PostToolUse", tool_call, output)
+
+            # 严格遵循 OpenAI 规范：每一条并行工具回执都必须是独立的 role: tool 消息
+            messages.append({
+                "role": "tool",
+                "tool_call_id": t_id,
+                "name": t_name,
+                "content": str(output)
+            })
+
+    # ── 4. 最终状态提取 ──
+    # 从最新的历史记录倒序查找，捞出子智能体最后留下的"临终遗言"（任务总结）
+    for msg in reversed(messages):
+        if msg["role"] == "assistant" and msg.get("content"):
+            text = extract_text(msg["content"])
+            if text:
+                return text
+
+    return "Subagent finished without a text summary."
+
+
+# ── Async Subagent Support ──
+import threading as _threading
+
+_subagent_results: dict[str, str] = {}
+_subagent_lock = _threading.Lock()
+_subagent_counter = 0
+
+
+def spawn_subagent_async(description: str) -> str:
+    """Spawn a subagent in a background thread. Returns immediately with an ID.
+    Results are collected via collect_subagent_results()."""
+    global _subagent_counter
+    _subagent_counter += 1
+    sid = f"sub_{_subagent_counter:04d}"
+
+    def _run():
+        result = spawn_subagent(description)
+        with _subagent_lock:
+            _subagent_results[sid] = result
+
+    _threading.Thread(target=_run, daemon=True).start()
+    print(f"  \033[33m[async subagent] {sid} started\033[0m")
+    return sid
+
+
+def collect_subagent_results() -> list[dict]:
+    """Poll completed async subagents. Returns list of notification dicts."""
+    with _subagent_lock:
+        ready = dict(_subagent_results)
+        _subagent_results.clear()
+    notifications = []
+    for sid, result in ready.items():
+        summary = result[:300] if len(result) > 300 else result
+        print(f"  \033[32m[async subagent] {sid} completed\033[0m")
+        notifications.append({
+            "role": "user",
+            "content": (
+                f"<subagent_result>\n"
+                f"  <id>{sid}</id>\n"
+                f"  <summary>{summary}</summary>\n"
+                f"</subagent_result>"
+            )
+        })
+    return notifications

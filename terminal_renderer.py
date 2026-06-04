@@ -86,37 +86,67 @@ def render_tool_execution(tool_name: str, description: str,
     _console.print(f"  {icon} [cyan][{tool_name}][/cyan] {description}")
 
 
-def render_tool_output(tool_name: str, output: str, max_lines: int = 20):
-    """Render tool output with auto-detection of content type.
+def render_tool_output(tool_name: str, output: str,
+                       max_lines: int = 20,
+                       collapsed: bool = True,
+                       output_index: int = 0,
+                       full_output: str = ""):
+    """Render tool output with collapsible preview/expand support.
 
-    - bash/git: syntax-highlighted code block
-    - read_file: dim panel with file content
-    - generic: dim panel, truncated if large
+    Args:
+        tool_name: e.g. 'bash', 'read_file', 'glob'.
+        output: The text to render (preview if collapsed, full if expanded).
+        max_lines: Max lines of preview when collapsed (default 20).
+        collapsed: True = collapsed preview with arrow hint;
+                   False = full expanded view with arrow.
+        output_index: 0-based index for /expand N and /collapse N hints.
+        full_output: Complete original text (for line count in collapsed mode).
     """
-    lines = output.split('\n')
+    import sys as _sys
 
-    if tool_name in ("bash", "git"):
-        code = '\n'.join(lines[:max_lines])
-        if len(lines) > max_lines:
-            code += f"\n[dim]... ({len(lines) - max_lines} more lines)[/dim]"
-        _console.print(Syntax(code, "bash", theme="monokai",
-                              line_numbers=False, background_color="default"))
-    elif tool_name in ("read_file", "write_file", "edit_file"):
-        truncated = '\n'.join(lines[:max_lines])
-        if len(lines) > max_lines:
-            truncated += f"\n[dim]... ({len(lines) - max_lines} more lines)[/dim]"
-        _console.print(Panel(truncated,
-                             title=f"[dim]{tool_name} output[/dim]",
-                             border_style="dim"))
+    # Unicode arrow with ASCII fallback
+    def _arrow(c: bool) -> str:
+        try:
+            chr(0x25B6).encode(_sys.stdout.encoding or 'utf-8')
+            return chr(0x25B6) if c else chr(0x25BC)
+        except (UnicodeEncodeError, AttributeError):
+            return '[+]' if c else '[-]'
+
+    real_output = full_output or output
+    total_lines = real_output.count('\n') + 1 if real_output else 0
+    preview_lines = output.count('\n') + 1 if output else 0
+
+    # Build title with arrow + hint
+    if collapsed and total_lines > preview_lines:
+        title = (f'[dim]{_arrow(True)} {tool_name} '
+                 f'· {preview_lines}/{total_lines} lines'
+                 f'  /expand {output_index + 1}[/dim]')
+    elif not collapsed:
+        title = (f'[dim]{_arrow(False)} {tool_name} '
+                 f'· {total_lines} lines'
+                 f'  /collapse {output_index + 1}[/dim]')
     else:
-        if len(lines) > max_lines:
-            output = '\n'.join(lines[:max_lines]) + \
-                     f"\n[dim]... ({len(lines) - max_lines} more lines)[/dim]"
-        _console.print(Panel(output,
-                             title=f"[dim]{tool_name} output[/dim]",
-                             border_style="dim"))
+        title = f'[dim]{tool_name} output[/dim]'
 
+    lines_out = output.split('\n')
 
+    # Bash / Git: syntax-highlighted inside Panel
+    if tool_name in ("bash", "git"):
+        code = '\n'.join(lines_out[:max_lines]) if collapsed else '\n'.join(lines_out)
+        if collapsed and total_lines > preview_lines:
+            code += f"\n[dim]... ({total_lines - preview_lines} more lines)[/dim]"
+        syntax = Syntax(code, "bash", theme="monokai",
+                        line_numbers=False, background_color="default")
+        _console.print(Panel(syntax, title=title, border_style="dim",
+                             title_align="left"))
+        return
+
+    # File ops / generic: Panel
+    content = '\n'.join(lines_out[:max_lines]) if collapsed else '\n'.join(lines_out)
+    if collapsed and total_lines > preview_lines:
+        content += f"\n[dim]... ({total_lines - preview_lines} more lines)[/dim]"
+    _console.print(Panel(content, title=title, border_style="dim",
+                         title_align="left"))
 def render_turn_summary(tool_results: list[dict]):
     """After a turn, render a compact Table summary of all tool calls.
 

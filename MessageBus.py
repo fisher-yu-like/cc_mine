@@ -6,29 +6,24 @@ import config
 if not MAILBOX_DIR.exists():
     MAILBOX_DIR.mkdir(exist_ok=True)
 import threading
-try:
-    import readline
-    READLINE_AVAILABLE = True
-except ImportError:
-    try:
-        import pyreadline3 as readline # Windows 兼容库
-        READLINE_AVAILABLE = True
-    except ImportError:
-        READLINE_AVAILABLE = False
 import os
-from config import  PROMPT
+
+
 def terminal_print(text: str):
+    """Print text above the prompt area. Thread-safe.
+
+    When running inside prompt_toolkit, uses its print_formatted_text
+    to avoid corrupting the input area. Falls back to plain print().
+    """
     if threading.current_thread() is threading.main_thread() or not config.CLI_ACTIVE:
         print(text)
         return
-    line = ""
-    if READLINE_AVAILABLE:
-        try:
-            line = readline.get_line_buffer()
-        except Exception:
-            line = ""
-    print(f"\r\033[K{text}")
-    print(PROMPT + line, end="", flush=True)
+    # Use prompt_toolkit's thread-safe print mechanism
+    try:
+        from prompt_toolkit_input import terminal_print_above
+        terminal_print_above(text)
+    except ImportError:
+        print(f"\r\033[K{text}")
 
 class MessageBus:
     def send(self,from_agent:str,to_agent:str,content:str,msg_type:str="message",metadata:dict=None):

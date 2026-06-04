@@ -25,6 +25,7 @@ dependencies = [
     "httpx>=0.28",
     "rich>=13.0",
     "colorama>=0.4",
+    "prompt_toolkit>=3.0.43",
 ]
 
 [project.optional-dependencies]

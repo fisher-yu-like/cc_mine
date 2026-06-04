@@ -723,6 +723,60 @@ def cmd_attachments(args: str) -> CmdResult:
         return "(multimodal support unavailable)", False
 
 
+# ── Collapsible Output ──
+
+@register("expand", "Expand the Nth tool output from the last turn. /expand 1")
+def cmd_expand(args: str) -> CmdResult:
+    try:
+        index = int(args.strip())
+    except ValueError:
+        return "Usage: /expand <N> (e.g. /expand 1)", False
+
+    from output_manager import get_output, output_count
+    from terminal_renderer import render_tool_output
+
+    n = output_count()
+    if n == 0:
+        return "No tool outputs from the last turn.", False
+    entry = get_output(index)
+    if entry is None:
+        return f"Invalid index: {index}. Valid range: 1-{n}", False
+    render_tool_output(entry["name"], entry["output"],
+                       collapsed=False, output_index=index - 1)
+    return "", False
+
+
+@register("collapse", "Collapse the Nth tool output. /collapse 1")
+def cmd_collapse(args: str) -> CmdResult:
+    try:
+        index = int(args.strip())
+    except ValueError:
+        return "Usage: /collapse <N> (e.g. /collapse 1)", False
+
+    from output_manager import get_output, output_count
+    from terminal_renderer import render_tool_output
+
+    n = output_count()
+    if n == 0:
+        return "No tool outputs from the last turn.", False
+    entry = get_output(index)
+    if entry is None:
+        return f"Invalid index: {index}. Valid range: 1-{n}", False
+    preview = '\n'.join(entry["output"].split('\n')[:8])
+    render_tool_output(entry["name"], preview,
+                       collapsed=True, output_index=index - 1,
+                       full_output=entry["output"])
+    return "", False
+
+
+@register("toggle-collapse", "Toggle default collapse/expand for tool outputs")
+def cmd_toggle_collapse(args: str) -> CmdResult:
+    from output_manager import toggle_collapse
+    new_state = toggle_collapse()
+    state_str = "collapsed (preview only)" if new_state else "expanded (full output)"
+    return f"Tool output default: \033[33m{state_str}\033[0m", False
+
+
 # ═══════════════════════════════════════════════════════════════
 # Dispatch
 # ═══════════════════════════════════════════════════════════════

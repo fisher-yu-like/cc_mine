@@ -46,42 +46,6 @@ def render_header():
     _console.print(separator.join(parts))
 
 
-def render_input_prompt(first_line: bool, attachment_count: int = 0) -> str:
-    """Build the styled REPL input prompt string.
-
-    Args:
-        first_line: True for the first line of multi-line input.
-        attachment_count: Number of pending attachments.
-
-    Returns:
-        A Rich-markup string ready for input().
-    """
-    from planning import get_state as plan_state
-    ps = plan_state()
-
-    parts = []
-    if ps == "planning":
-        parts.append("[yellow][plan][/yellow]")
-    elif ps == "plan_ready":
-        parts.append("[yellow][awaiting][/yellow]")
-    elif ps == "plan_approved":
-        parts.append("[green][exec][/green]")
-
-    if attachment_count > 0:
-        parts.append(f"[magenta][{attachment_count}att][/magenta]")
-
-    mode = _get_mode()
-    if mode == "ask":
-        parts.append("[yellow][ask][/yellow]")
-
-    prefix = " ".join(parts) + " " if parts else ""
-
-    if first_line:
-        return f"{prefix}[cyan]s01 >> [/cyan]"
-    else:
-        return f"{prefix}[cyan]...    [/cyan]"
-
-
 def render_separator():
     """Render a horizontal rule between response area and input."""
     from terminal_renderer import render_separator as _rs

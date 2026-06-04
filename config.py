@@ -24,7 +24,7 @@ KEEP_RECENT_TOOL_RESULTS = 10
 PERSIST_THRESHOLD = 30000
 MAX_TURNS = 100  # agent loop max iterations before forced summary exit
 CONTINUATION_PROMPT = "Continue from the previous response. Do not repeat completed work."
-PROMPT = "\033[36ms20 >> \033[0m"
+PROMPT = "\033[36mcc_mine > \033[0m"
 CLI_ACTIVE = False
 MAILBOX_DIR = WORKDIR / ".mailboxes"
 WORKTREES_DIR = WORKDIR / ".worktrees"
@@ -134,7 +134,14 @@ PROMPT_SECTIONS = {
         "- First: ONE todo_write with your current task.\n"
         "- Spawn a subagent (task) to do the actual work.\n"
         "- When subagent finishes: update the ONE todo to the next step (or mark completed if done).\n"
-        "- When all done: final summary. Use Chinese when the user writes in Chinese."
+        "- When all done: final summary. Use Chinese when the user writes in Chinese.\n\n"
+        "## Task Completion (CRITICAL)\n"
+        "When ALL subagents have returned success and the user's request is fulfilled:\n"
+        "- Respond with ONLY a text summary. Do NOT call any more tools.\n"
+        "- Do NOT spawn a subagent to \"verify\" — trust the results you already have.\n"
+        "- Do NOT check the same thing twice — one read is enough.\n"
+        "Signs your task is DONE: todo all completed, all subagents returned success.\n"
+        "When done: JUST WRITE THE SUMMARY. NO TOOL CALLS."
     ),
     "subagent_identity": (
         "You are a coding WORKER subagent. Your job is to execute ONE specific task and return results.\n"
@@ -149,7 +156,12 @@ PROMPT_SECTIONS = {
         "- Complete the assigned task, then return a concise final summary.\n"
         "- Do NOT overthink — the lead agent handles strategy. You handle execution.\n"
         "- If blocked by an error, report it clearly in your summary.\n"
-        "- Limit yourself to 30 turns max."
+        "- Limit yourself to 30 turns max.\n\n"
+        "## When You're Done\n"
+        "When the assigned task is complete, respond with ONLY a text summary.\n"
+        "Do NOT call more tools. Do NOT re-read files you already read.\n"
+        "Do NOT verify your work with extra read_file calls — trust what you wrote.\n"
+        "Report your result concisely and stop."
     ),
     "tools": (
         "## YOUR TOOLBOX (Lead Agent — Planner / Orchestrator)\n\n"

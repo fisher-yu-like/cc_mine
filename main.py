@@ -46,6 +46,26 @@ def agent_loop(messages:list,context:dict):
     max_tokens=DEFAULT_MAX_TOKENS
     turn_count = 0
 
+    # ── Repetition guard state ──
+    tool_call_history: list[dict] = []
+    READONLY_TOOLS = {"read_file", "glob", "grep", "web_search", "web_fetch"}
+    _guard_repetition_fired = False
+    _guard_readonly_fired = False
+
+    def _args_fingerprint(t_name: str, t_input: dict) -> str:
+        """Stable fingerprint for detecting repeated identical tool calls."""
+        if t_name == "read_file":
+            return f"read:{t_input.get('path', '')}"
+        elif t_name == "bash":
+            return f"bash:{str(t_input.get('command', ''))[:100]}"
+        elif t_name in ("glob", "grep"):
+            return f"{t_name}:{t_input.get('pattern', '')}"
+        elif t_name == "web_search":
+            return f"search:{str(t_input.get('query', ''))[:80]}"
+        else:
+            import json as _json
+            return f"{t_name}:{_json.dumps(t_input, sort_keys=True)[:200]}"
+
     while True:
         turn_count += 1
         if turn_count == MAX_TURNS:
@@ -68,6 +88,38 @@ def agent_loop(messages:list,context:dict):
         prepare_context(messages)#提前准备好的上下文插入messages
         context=update_context(context,messages)
         tools,handlers=assemble_tool_pool(BUILTIN_HANDLERS)#每次循环更新toolpool
+
+        # ── Repetition Guards ──
+        if not _guard_repetition_fired and len(tool_call_history) >= 3:
+            last_3 = tool_call_history[-3:]
+            if all(t["name"] == last_3[0]["name"] for t in last_3):
+                if all(t["args_key"] == last_3[0]["args_key"] for t in last_3):
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"[System] You've called '{last_3[0]['name']}' 3 times "
+                            f"in a row with the same arguments. If the task is "
+                            f"complete, respond with a text summary and NO tool calls."
+                        )
+                    })
+                    print(f"  \033[33m[repetition guard] {last_3[0]['name']} x3\033[0m")
+                    _guard_repetition_fired = True
+
+        if not _guard_readonly_fired and len(tool_call_history) >= 5:
+            last_5 = tool_call_history[-5:]
+            if all(t["name"] in READONLY_TOOLS for t in last_5):
+                unique = sorted(set(t["name"] for t in last_5))
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"[System] Your last 5 tool calls have all been read-only "
+                        f"({', '.join(unique)}). Consider whether you have enough "
+                        f"information to proceed or conclude. If done, respond "
+                        f"without tool calls."
+                    )
+                })
+                print(f"  \033[33m[readonly guard] 5 read-only calls\033[0m")
+                _guard_readonly_fired = True
 
         try:
             #呼叫大脑
@@ -201,7 +253,28 @@ def agent_loop(messages:list,context:dict):
                 output=call_tool_handler(handler,tool_input,tool_name)
                 #tool使用后检查
                 trigger_hooks("PostToolUse",compat_block,output)
-                render_tool_output(tool_name, str(output))
+
+                # ── Record tool call for repetition guard ──
+                tool_call_history.append({
+                    "name": tool_name,
+                    "args_key": _args_fingerprint(tool_name, tool_input)
+                })
+                _guard_repetition_fired = False
+                _guard_readonly_fired = False
+
+                # ── Store output + render with collapsible preview ──
+                from output_manager import store_output, get_collapse_default
+                full_text = str(output)
+                output_idx = store_output(tool_name, full_text)
+                collapsed = get_collapse_default()
+                if collapsed:
+                    preview = '\n'.join(full_text.split('\n')[:8])
+                    render_tool_output(tool_name, preview,
+                                       collapsed=True, output_index=output_idx - 1,
+                                       full_output=full_text)
+                else:
+                    render_tool_output(tool_name, full_text,
+                                       collapsed=False, output_index=output_idx - 1)
             except Exception as tool_err:
                 output = f"[Tool Error] {type(tool_err).__name__}: {str(tool_err)[:200]}"
                 render_error(f"tool crash: {tool_name}: {type(tool_err).__name__}")
@@ -359,8 +432,7 @@ def main(argv: list[str] | None = None):
     #运行主函数
     config.CLI_ACTIVE = True
     print(f"cc_mine agent  |  workdir: {config.WORKDIR}\n")
-    print("Multi-line input: type your message, press Enter twice (empty line) to send.")
-    print("Type /help for commands, /exit to quit.\n")
+    print("Esc+Enter to send  |  Ctrl+D to exit  |  /help for commands\n")
     scan_skills()
     history = []#记录
     context = update_context({}, [])#更新上下文
@@ -387,39 +459,42 @@ def main(argv: list[str] | None = None):
     # Auto-save session ID
     _auto_session_id = session_id or f"session_{int(time.time())}"
 
-    def read_multiline() -> str | None:
-        """Read multi-line input with styled REPL prompt. Empty line submits."""
-        from repl_ui import render_header, render_input_prompt
-
-        lines = []
-        first = True
-        while True:
-            try:
-                if first:
-                    render_header()
-                n_att = pending_count()
-                prompt = render_input_prompt(first, n_att)
-                line = input(prompt)
-            except (EOFError, KeyboardInterrupt):
-                return None
-            if first and line.strip().lower() in ("q", "exit"):
-                return None
-            if first and line.strip() == "":
-                return None  # empty first line = quit
-            if not first and line.strip() == "":
-                break  # empty continuation line = submit
-            if first and line.strip():
-                lines.append(line.strip())
-                first = False
-            elif not first:
-                lines.append(line)
-        return "\n".join(lines) if lines else None
+    # ── Import the new prompt_toolkit input, with fallback ──
+    try:
+        from prompt_toolkit_input import read_input
+    except ImportError:
+        # Fallback: old input()-based multi-line reader
+        def read_input() -> str | None:
+            """Legacy multi-line input: double-Enter to submit."""
+            from repl_ui import render_header
+            lines = []
+            first = True
+            while True:
+                try:
+                    if first:
+                        render_header()
+                    prompt = "cc_mine > " if first else "...   "
+                    line = input(prompt)
+                except (EOFError, KeyboardInterrupt):
+                    return None
+                if first and line.strip().lower() in ("q", "exit"):
+                    return None
+                if first and line.strip() == "":
+                    return None
+                if not first and line.strip() == "":
+                    break
+                if first and line.strip():
+                    lines.append(line.strip())
+                    first = False
+                elif not first:
+                    lines.append(line)
+            return "\n".join(lines) if lines else None
 
     while True:
         # Keep CLI commands in sync with current state
         cli_commands.set_shared_state(history, context, config.WORKDIR, _auto_session_id)
 
-        query = read_multiline()
+        query = read_input()
         if query is None:
             break
         if query.strip() == "":
@@ -447,6 +522,8 @@ def main(argv: list[str] | None = None):
             print(f"  \033[35m[multimodal] sending message with {n_att} attachment(s)\033[0m")
         else:
             history.append({"role": "user", "content": query})
+        from output_manager import clear_outputs
+        clear_outputs()
         with agent_lock:
             agent_loop(history, context)
             context = update_context(context, history)

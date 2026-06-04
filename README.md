@@ -37,7 +37,7 @@ python eval/benchmark.py --list       # 列出所有测试项
 ### 核心能力——像一个真正的程序员
 
 - **对话式交互**：你说需求，它来执行。支持多轮对话，上下文自动压缩不会爆。
-- **先计划再动手**：可以进入"规划模式"只读不写，出方案等你审批通过再执行。
+- **先计划再动手**：可以进入"规划模式"只读不写，Agent 写出详细计划到 `.md` 文件，你在 IDE 里打开编辑、增删步骤，审批通过后再执行。
 - **两种模式切换**：`auto`（自动执行不废话）/ `ask`（每次写文件跑命令前问你），随时可以切。
 - **崩溃也不怕**：自动存档，下次 `--resume` 接着干。API 挂了会自动重试换模型。
 
@@ -81,25 +81,36 @@ cc_mine 的设计哲学是"你是指挥官，不是士兵"。它**自己不碰�
 ## 快速开始
 
 ```bash
-# 1. 克隆（注意：项目名叫 cc_mine）
+# 1. 克隆
 git clone https://github.com/fisher-yu-like/cc_mine.git
 cd cc_mine
 
-# 2. 装依赖（就 5 个包）
-pip install openai python-dotenv pyyaml requests rich
+# 2. 创建虚拟环境（推荐）
+python -m venv .venv
+.venv\Scripts\activate     # Windows
+# source .venv/bin/activate  # macOS / Linux
 
-# 3. 配置密钥
+# 3. 安装（可编辑模式，安装后可在终端直接使用 cc_mine 命令）
+pip install -e .
+
+# 4. 配置密钥
 cp .env.example .env
 # 编辑 .env，填入你的 API key
 
-# 4. 跑起来
-python main.py
+# 5. 跑起来 — 像 Claude Code 一样直接在终端输入
+cc_mine
 
-# 指定工作目录和模型
-python main.py --workdir /path/to/project --model deepseek-v4-pro
+# 和 Claude Code 几乎一样的用法
+cc_mine --workdir /path/to/project    # 指定工作目录
+cc_mine --model deepseek-v4-pro       # 指定模型
+cc_mine --yes                         # 跳过提示，自动恢复上次 session
+cc_mine --new                         # 强制新建 session
+cc_mine --resume <session_id>         # 恢复指定会话
 
-# 恢复上次会话
-python main.py --resume
+# 如果你没有 pip install（直接用脚本启动）
+./cc_mine              # Git Bash
+cc_mine.bat            # Windows CMD
+python main.py         # 兜底方式
 ```
 
 ---
@@ -112,8 +123,8 @@ python main.py --resume
 |------|------|
 | `/help` | 查看所有可用命令 |
 | `/mode auto\|ask` | 切换模式：自动执行 / 每步确认 |
-| `/plan` | 进入规划模式（只读探索） |
-| `/plan-approve` | 批准当前计划 |
+| `/plan` | 进入规划模式（只读探索，生成 .md 计划文件） |
+| `/plan-approve` | 批准当前计划（自动读取你对 .md 文件的修改） |
 | `/plan-reject 意见` | 驳回计划并给出修改意见 |
 | `/model 模型名` | 切换云端模型 |
 | `/ollama 模型名` | 切换到本地 Ollama 模型 |
@@ -135,54 +146,81 @@ python main.py --resume
 | `/resume 会话ID` | 恢复某个会话 |
 | `/exit` | 退出 |
 
+### 规划模式（Plan Mode）工作流
+
+规划模式让你在动手写代码之前，先审阅和修改 Agent 的方案。
+
+```
+1. 你输入:  /plan "给网站加暗色模式"
+2. Agent 进入只读模式，探索代码库，设计方案
+3. Agent 调用 submit_plan → 生成 .cc_mine/plans/plan_xxx.md
+4. 终端提示: 📄 Plan file: .cc_mine/plans/plan_xxx.md
+             → Open this file in your IDE to review and edit
+5. 你在 IDE 中打开 .md 文件，随意编辑:
+   - 修改 Goal（目标）
+   - 增删/重排 Steps（实现步骤）
+   - 添加 Implementation Details
+6. 编辑完毕，回到终端: /plan-approve
+7. 系统重新读取 .md 文件，捕获你的所有修改
+8. Agent 按照你修改过的计划开始执行
+```
+
+**特点：**
+- `.md` 文件就是你熟悉的 Markdown，直接编辑就行
+- 审批时系统会**重新读文件**，你改的每一步都会被采纳
+- 支持驳回反馈：`/plan-reject 步骤 3 太危险了，换一种方式`
+
 ---
 
 ## 项目结构
 
 ```
 cc_mine/
-├── main.py               # 主循环 + REPL 界面
-├── config.py              # 配置 + 系统提示词 + 目录初始化
-├── call_llm.py            # LLM 调用封装 + 三层提示词缓存
-├── executor.py            # 工具路由（38 个处理函数）
-├── tool_registry.py       # 38 个工具定义（OpenAI 格式）
-├── hooks.py               # 权限 + 日志 + 安全钩子
-├── memory.py              # 四层压缩 + 记忆增删查改
-├── planning.py            # 规划模式状态机
-├── subagent.py            # 一次性子代理
-├── AutonomousAgent.py     # 常驻后台队友
-├── workflow.py            # DAG 并行任务编排
-├── task.py                # 任务看板（支持依赖）
-├── session.py             # 会话存档与恢复
-├── MessageBus.py          # 代理间消息通信
-├── CronScheduler.py       # 定时任务调度
-├── mcp.py                 # MCP 外部工具集成
-├── worktree.py            # Git worktree 隔离
-├── terminal_renderer.py   # Rich 统一渲染层
-├── repl_ui.py             # REPL 界面渲染
-├── spinner.py             # 加载动画
-├── mode_manager.py        # auto/ask 模式
-├── query_queue.py         # 并发查询队列
-├── skill_context.py       # 技能持久化存储
-├── skill_installer.py     # 技能安装器
-├── skill_load.py          # 技能加载器
-├── debug_tracker.py       # Debug 失败追踪
-├── multimodal.py          # 图片/PDF 附件
-├── cli_commands.py        # 25 个斜杠命令
-├── CC_MINE.md             # 你的偏好设置
-├── skills/                # 预装技能
+├── main.py                # 主循环 + main() 入口
+├── cc_mine_cli.py          # CLI 入口（pip 安装后生成 cc_mine 命令）
+├── cc_mine / cc_mine.bat  # 快捷启动脚本（Git Bash / Windows CMD）
+├── pyproject.toml          # Python 包配置 + 依赖声明
+├── config.py               # 配置 + 系统提示词 + 目录初始化
+├── call_llm.py             # LLM 调用封装 + 三层提示词缓存
+├── executor.py             # 工具路由（38 个处理函数）
+├── tool_registry.py        # 38 个工具定义（OpenAI 格式）
+├── hooks.py                # 权限 + 日志 + 安全钩子
+├── memory.py               # 四层压缩 + 记忆增删查改
+├── planning.py             # 规划模式 + 计划 .md 文件生成/解析
+├── subagent.py             # 一次性子代理
+├── AutonomousAgent.py      # 常驻后台队友
+├── workflow.py             # DAG 并行任务编排
+├── task.py                 # 任务看板（支持依赖）
+├── session.py              # 会话存档与恢复
+├── MessageBus.py           # 代理间消息通信
+├── CronScheduler.py        # 定时任务调度
+├── mcp.py                  # MCP 外部工具集成
+├── worktree.py             # Git worktree 隔离
+├── terminal_renderer.py    # Rich 统一渲染层
+├── repl_ui.py              # REPL 界面渲染
+├── spinner.py              # 加载动画
+├── mode_manager.py         # auto/ask 模式
+├── query_queue.py          # 并发查询队列
+├── skill_context.py        # 技能持久化存储
+├── skill_installer.py      # 技能安装器
+├── skill_load.py           # 技能加载器
+├── debug_tracker.py        # Debug 失败追踪
+├── multimodal.py           # 图片/PDF 附件
+├── cli_commands.py         # 25+ 个斜杠命令
+├── CC_MINE.md              # 你的偏好设置
+├── skills/                 # 预装技能
 ├── eval/
-│   ├── benchmark.py       # 7 维度 59 项评测
-│   ├── suites/            # 各维度 YAML 测试定义
-│   └── results/           # 评测报告
+│   ├── benchmark.py        # 7 维度 59 项评测
+│   ├── suites/             # 各维度 YAML 测试定义
+│   └── results/            # 评测报告
 └── tools/
-    ├── bash.py            # 执行命令
-    ├── file_ops.py        # 文件读写编辑搜索
-    ├── git.py             # Git 操作
-    ├── grep.py            # 纯 Python 实现的 ripgrep
-    ├── todo_write.py      # 待办事项展示
-    ├── web.py             # 网页搜索与抓取
-    └── result_renderer.py # 命令结果格式化
+    ├── bash.py             # 执行命令
+    ├── file_ops.py         # 文件读写编辑搜索
+    ├── git.py              # Git 操作
+    ├── grep.py             # 纯 Python 实现的 ripgrep
+    ├── todo_write.py       # 待办事项展示
+    ├── web.py              # 网页搜索与抓取
+    └── result_renderer.py  # 命令结果格式化
 ```
 
 ---
@@ -195,11 +233,11 @@ MIT
 
 ## English Summary
 
-cc_mine is a self-built Claude Code clone. It's an AI coding agent that plans, delegates to subagents, executes tools, and reports results — all through a terminal REPL. 38 built-in tools, planning mode, DAG workflow engine, 4-layer context compaction, safety hooks, Rich terminal UI, and a 59-task benchmark suite scoring **100/100**.
+cc_mine is a self-built Claude Code clone. It's an AI coding agent that plans, delegates to subagents, executes tools, and reports results — all through a terminal REPL. 38 built-in tools, planning mode with editable markdown plan files, DAG workflow engine, 4-layer context compaction, safety hooks, Rich terminal UI, and a 59-task benchmark suite scoring **100/100**.
 
 ```bash
 git clone https://github.com/fisher-yu-like/cc_mine.git
-cd cc_mine && pip install openai python-dotenv pyyaml requests rich
+cd cc_mine && pip install -e .
 cp .env.example .env   # add your API key
-python main.py
+cc_mine                 # launch like Claude Code
 ```

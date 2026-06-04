@@ -122,6 +122,72 @@ def format_fix_plan(error_context: str, solutions: list[dict]) -> str:
     return "\n".join(lines)
 
 
+# ── Test command detection ──
+
+TEST_PATTERNS = [
+    r'\bpytest\b', r'\bnpm\s+(test|run\s+test)\b', r'\byarn\s+test\b',
+    r'\bcargo\s+test\b', r'\bgo\s+test\b', r'\bunittest\b',
+    r'\bpython\s+-m\s+(unittest|pytest)\b', r'\bpython\s+\S*test\S*\.py\b',
+    r'\bjest\b', r'\bnpx\s+vitest\b', r'\bnpx\s+cypress\b',
+    r'\bmake\s+test\b', r'\bctest\b', r'\bdotnet\s+test\b',
+    r'\bphpunit\b', r'\brspec\b', r'\bmvn\s+test\b', r'\bgradle\s+test\b',
+    r'\btox\b', r'\bnosetests\b', r'\bpython\s+setup\.py\s+test\b',
+]
+
+
+def is_test_command(command: str) -> bool:
+    """Detect if a bash command is running a test suite."""
+    cmd_lower = command.lower()
+    return any(re.search(p, cmd_lower) for p in TEST_PATTERNS)
+
+
+def extract_error_lines(output: str, max_lines: int = 8) -> str:
+    """Extract error-relevant lines from test output.
+
+    Captures: FAILED, Error, Traceback, AssertionError, E-prefix pytest lines,
+    and summary lines like '=== X failed in Y.YYs ==='.
+    """
+    lines = output.split('\n')
+    error_lines = []
+    in_traceback = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_traceback:
+                error_lines.append('')
+            continue
+
+        # Traceback block
+        if 'Traceback (most recent call last)' in stripped:
+            in_traceback = True
+            error_lines.append(stripped)
+            continue
+
+        if in_traceback:
+            if (stripped.startswith('File ') or
+                any(kw in stripped for kw in ['Error:', 'Error ', 'Exception', 'assert ']) or
+                    (stripped and stripped[0].isspace())):
+                error_lines.append(stripped)
+                if any(kw in stripped for kw in ['Error:', 'Error ']):
+                    in_traceback = False  # end of this traceback
+                continue
+            in_traceback = False
+
+        # Error indicators
+        if any(kw in stripped for kw in [
+            'FAILED', 'FAIL:', 'ERROR:', 'ERRORS:',
+            'AssertionError', 'assert ', 'E   ',
+            'short test summary', '===']):
+            error_lines.append(stripped)
+
+    if not error_lines:
+        # Fallback: last 20 lines of output
+        error_lines = lines[-20:]
+
+    return '\n'.join(error_lines[:max_lines * 3])[:2000]
+
+
 def _extract_error_key(msg: str) -> str:
     """Extract a stable error key, stripping line numbers and timestamps."""
     key = re.sub(r'File ".*?", line \d+', '', str(msg))

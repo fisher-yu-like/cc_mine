@@ -275,6 +275,32 @@ def agent_loop(messages:list,context:dict):
                 else:
                     render_tool_output(tool_name, full_text,
                                        collapsed=False, output_index=output_idx - 1)
+
+                # ── Test failure detection (non-zero exit code on test commands) ──
+                if tool_name == "bash":
+                    from tools.bash import get_last_exit_code
+                    exit_code = get_last_exit_code()
+                    cmd = tool_input.get("command", "")
+                    from debug_tracker import is_test_command, extract_error_lines
+                    if is_test_command(cmd) and exit_code != 0:
+                        error_lines = extract_error_lines(full_text)
+                        failure_key = f"test_failure:{cmd[:80]}"
+                        from debug_tracker import (record_failure,
+                                                   should_trigger_web_search,
+                                                   get_failure_count)
+                        record_failure(failure_key + "\n" + error_lines[:200])
+                        if should_trigger_web_search():
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    f"[Auto Debug Search] Tests failed (exit {exit_code}). "
+                                    f"Relevant errors:\n{error_lines[:500]}\n\n"
+                                    f"Use web_search to find solutions for this specific "
+                                    f"error. Search English + Chinese sources. Do NOT "
+                                    f"guess — find the root cause before fixing."
+                                )
+                            })
+                            print(f"  \033[35m[test failure] web search triggered\033[0m")
             except Exception as tool_err:
                 output = f"[Tool Error] {type(tool_err).__name__}: {str(tool_err)[:200]}"
                 render_error(f"tool crash: {tool_name}: {type(tool_err).__name__}")
@@ -312,11 +338,15 @@ def agent_loop(messages:list,context:dict):
             else:
                 rounds_since_todo+=1
 
+            # Strip ANSI codes from LLM-bound messages (keep for user display)
+            import re as _re
+            _ansi_re = _re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+            clean_output = _ansi_re.sub('', str(output))
             tool_results_messages.append({
                             "role": "tool",
                             "tool_call_id": tool_id,
                             "name": tool_name,
-                            "content": str(output)
+                            "content": clean_output
                         })
 
 

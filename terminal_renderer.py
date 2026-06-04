@@ -128,9 +128,34 @@ def render_tool_output(tool_name: str, output: str,
     else:
         title = f'[dim]{tool_name} output[/dim]'
 
+    import re
     lines_out = output.split('\n')
+    has_ansi = bool(re.search(r'\x1b\[[0-9;]*[a-zA-Z]', output))
 
-    # Bash / Git: syntax-highlighted inside Panel
+    # edit_file: extract diff and use Rich Syntax for red/green coloring
+    if tool_name == "edit_file":
+        # Extract the diff section between separator lines
+        diff_text = output
+        sep = '─' * 40
+        if sep in output:
+            parts = output.split(sep)
+            if len(parts) >= 2:
+                diff_text = parts[1]
+        # Strip any ANSI codes — Rich's diff lexer applies its own colors
+        diff_text = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', diff_text)
+        render_diff(diff_text)
+        return
+
+    # Bash / Git with ANSI colors: use Panel so ANSI renders natively
+    if tool_name in ("bash", "git") and has_ansi:
+        content = '\n'.join(lines_out[:max_lines]) if collapsed else '\n'.join(lines_out)
+        if collapsed and total_lines > preview_lines:
+            content += f"\n[dim]... ({total_lines - preview_lines} more lines)[/dim]"
+        _console.print(Panel(content, title=title, border_style="dim",
+                             title_align="left"))
+        return
+
+    # Bash / Git without ANSI: syntax-highlighted inside Panel
     if tool_name in ("bash", "git"):
         code = '\n'.join(lines_out[:max_lines]) if collapsed else '\n'.join(lines_out)
         if collapsed and total_lines > preview_lines:

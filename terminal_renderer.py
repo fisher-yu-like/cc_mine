@@ -102,29 +102,19 @@ def render_tool_output(tool_name: str, output: str,
         output_index: 0-based index for /expand N and /collapse N hints.
         full_output: Complete original text (for line count in collapsed mode).
     """
-    import sys as _sys
-
-    # Unicode arrow with ASCII fallback
-    def _arrow(c: bool) -> str:
-        try:
-            chr(0x25B6).encode(_sys.stdout.encoding or 'utf-8')
-            return chr(0x25B6) if c else chr(0x25BC)
-        except (UnicodeEncodeError, AttributeError):
-            return '[+]' if c else '[-]'
-
+    # Build title with expand/collapse hint
     real_output = full_output or output
     total_lines = real_output.count('\n') + 1 if real_output else 0
     preview_lines = output.count('\n') + 1 if output else 0
 
-    # Build title with arrow + hint
     if collapsed and total_lines > preview_lines:
-        title = (f'[dim]{_arrow(True)} {tool_name} '
-                 f'· {preview_lines}/{total_lines} lines'
-                 f'  /expand {output_index + 1}[/dim]')
+        title = (f'[dim][-] {tool_name} '
+                 f'| {preview_lines}/{total_lines} lines'
+                 f' | /expand {output_index + 1}[/dim]')
     elif not collapsed:
-        title = (f'[dim]{_arrow(False)} {tool_name} '
-                 f'· {total_lines} lines'
-                 f'  /collapse {output_index + 1}[/dim]')
+        title = (f'[dim][+] {tool_name} '
+                 f'| {total_lines} lines'
+                 f' | /collapse {output_index + 1}[/dim]')
     else:
         title = f'[dim]{tool_name} output[/dim]'
 

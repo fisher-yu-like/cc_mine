@@ -14,7 +14,8 @@ _last_outputs: list[dict] = []
 _outputs_lock = threading.Lock()
 
 # ── Global collapse default ──
-_collapse_default: bool = True
+# Default to EXPANDED so users see full output. Toggle with /toggle-collapse.
+_collapse_default: bool = False
 
 
 def store_output(name: str, text: str) -> int:

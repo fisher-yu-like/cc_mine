@@ -1,7 +1,7 @@
 import os
 import random
 import time
-from openai import RateLimitError, InternalServerError, APITimeoutError, APIConnectionError, BadRequestError
+from openai_client import RateLimitError, InternalServerError, APITimeoutError, APIConnectionError, BadRequestError
 from dotenv import load_dotenv
 from config import BASE_DELAY_MS, MAX_RETRIES, MAX_CONSECUTIVE_529
 

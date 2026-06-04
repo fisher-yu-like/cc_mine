@@ -1,4 +1,4 @@
-from openai import  OpenAI
+from openai_client import OpenAI
 from dotenv import  load_dotenv
 from  ErrorRecovery import   RecoveryState,with_retry
 from  config import  DEFAULT_MAX_TOKENS,PROMPT_SECTIONS
@@ -11,20 +11,23 @@ _original_base_url = os.getenv("LLM_BASE_URL")
 _original_model = os.getenv("PRIMARY_MODEL", "deepseek-v4-pro")
 _provider = "cloud"  # "cloud" | "ollama"
 
-client = OpenAI(
-    api_key=_original_api_key,
-    base_url=_original_base_url,
-)
+_client = None
 FALLBACK_MODEL=os.getenv("FALLBACK_MODEL_ID")
 
 
 def get_client() -> OpenAI:
-    """Return the CURRENT OpenAI client. Always use this instead of importing `client` directly.
+    """Return the CURRENT OpenAI client. Lazy-init on first call.
 
     Modules that import `client` at load time will hold a stale reference when the provider
     is switched (Ollama <-> cloud). This function always returns the live client.
     """
-    return client
+    global _client
+    if _client is None:
+        _client = OpenAI(
+            api_key=_original_api_key,
+            base_url=_original_base_url,
+        )
+    return _client
 
 
 # ── Provider switching ──
@@ -41,11 +44,11 @@ def get_provider_info() -> dict:
 
 def switch_to_ollama(model_name: str) -> str:
     """Switch the OpenAI client to a local Ollama endpoint."""
-    global client, _provider
+    global _client, _provider
     os.environ["LLM_API_KEY"] = "ollama"
     os.environ["LLM_BASE_URL"] = "http://localhost:11434/v1"
     os.environ["PRIMARY_MODEL"] = model_name
-    client = OpenAI(api_key="ollama", base_url="http://localhost:11434/v1")
+    _client = OpenAI(api_key="ollama", base_url="http://localhost:11434/v1")
     _provider = "ollama"
     # Sync the cached module-level variable in ErrorRecovery
     _sync_error_recovery_model(model_name)
@@ -55,11 +58,11 @@ def switch_to_ollama(model_name: str) -> str:
 
 def switch_to_cloud() -> str:
     """Switch back to the original cloud API provider."""
-    global client, _provider
+    global _client, _provider
     os.environ["LLM_API_KEY"] = _original_api_key or ""
     os.environ["LLM_BASE_URL"] = _original_base_url or ""
     os.environ["PRIMARY_MODEL"] = _original_model
-    client = OpenAI(
+    _client = OpenAI(
         api_key=_original_api_key or "sk-placeholder",
         base_url=_original_base_url or "",
     )
@@ -212,7 +215,7 @@ def call_llm_structured(prompt: str, schema: dict, state: RecoveryState,
     # Try native json_schema first
     try:
         return with_retry(
-            lambda: client.chat.completions.create(
+            lambda: get_client().chat.completions.create(
                 model=state.current_model,
                 messages=full_messages,
                 response_format={
@@ -232,7 +235,7 @@ def call_llm_structured(prompt: str, schema: dict, state: RecoveryState,
             print(f"  \033[33m[structured] json_schema not supported by model, falling back to prompt-based JSON\033[0m")
             # Fallback: regular chat with JSON-in-prompt instructions
             return with_retry(
-                lambda: client.chat.completions.create(
+                lambda: get_client().chat.completions.create(
                     model=state.current_model,
                     messages=full_messages,
                     max_tokens=4000,
@@ -263,7 +266,7 @@ def call_llm(messages:list,context:dict,tools:list,state:RecoveryState,max_token
     set_state(SpinnerState.CALLING_LLM)
     try:
         return with_retry(
-            lambda : client.chat.completions.create(
+            lambda : get_client().chat.completions.create(
                     model=state.current_model,
                     messages=full_messages,
                     tools=tools if tools else None ,

@@ -9,7 +9,7 @@ import html as _html_lib
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 
-_requests = None  # lazy-loaded when needed
+_httpx = None  # lazy-loaded when needed
 
 # ── Configuration ──
 MAX_FETCH_SIZE = 100 * 1024     # 100KB max HTML download
@@ -18,22 +18,22 @@ FETCH_TIMEOUT = 15               # seconds
 USER_AGENT = (
     "Mozilla/5.0 (compatible; cc_mine/1.0; +https://github.com/cc_mine)"
 )
-SEARCH_URL = "https://lite.duckduckgo.com/lite/"  # no-JS lightweight search
+DDG_API_URL = "https://api.duckduckgo.com/"  # DuckDuckGo Instant Answer API
 
 
-def _get_requests():
-    global _requests
-    if _requests is None:
+def _get_httpx():
+    global _httpx
+    if _httpx is None:
         try:
-            import requests
-            _requests = requests
+            import httpx
+            _httpx = httpx
         except ImportError:
             return None
-    return _requests
+    return _httpx
 
 
-def _has_requests() -> bool:
-    return _get_requests() is not None
+def _has_httpx() -> bool:
+    return _get_httpx() is not None
 
 
 # ── HTML to Text (stdlib only) ──
@@ -84,55 +84,84 @@ def _extract_text(html: str) -> str:
 def run_web_search(query: str,
                    allowed_domains: list[str] | None = None,
                    blocked_domains: list[str] | None = None) -> str:
-    """Search the web and return top results."""
-    requests = _get_requests()
-    if not requests:
-        return "Error: 'requests' package not installed. Run: pip install requests"
+    """Search the web using DuckDuckGo Instant Answer API and return top results."""
+    httpx = _get_httpx()
+    if not httpx:
+        return "Error: 'httpx' package not installed. Run: pip install httpx"
 
     try:
-        resp = requests.post(
-            SEARCH_URL,
-            data={"q": query, "kl": "us-en"},
+        resp = httpx.get(
+            DDG_API_URL,
+            params={"q": query, "format": "json", "no_html": "1"},
             headers={"User-Agent": USER_AGENT},
             timeout=FETCH_TIMEOUT,
         )
         resp.raise_for_status()
+        data = resp.json()
     except Exception as e:
         return f"Error searching: {type(e).__name__}: {e}"
 
-    # Extract result links from DuckDuckGo Lite HTML
     results = []
-    link_pattern = re.compile(
-        r'<a[^>]*class="result-link"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
-        re.DOTALL | re.IGNORECASE,
-    )
-    snippet_pattern = re.compile(
-        r'<td[^>]*class="result-snippet"[^>]*>(.*?)</td>',
-        re.DOTALL | re.IGNORECASE,
-    )
+    seen_urls = set()
 
-    links = link_pattern.findall(resp.text)
-    snippets = snippet_pattern.findall(resp.text)
-
-    for i, (url, title) in enumerate(links[:8]):
-        url = _html_lib.unescape(url.strip())
-        title = re.sub(r'<[^>]+>', '', title).strip()
-        title = _html_lib.unescape(title)
-
+    def _add_result(url: str, title: str, snippet: str = ""):
+        """Add a result entry if URL is new and passes domain filters."""
+        if not url or url in seen_urls:
+            return
         # Apply domain filters
         if allowed_domains or blocked_domains:
             domain = urlparse(url).netloc.lower()
             if blocked_domains and any(d.lower() in domain for d in blocked_domains):
-                continue
+                return
             if allowed_domains and not any(d.lower() in domain for d in allowed_domains):
-                continue
+                return
+        seen_urls.add(url)
+        title = _html_lib.unescape(title.strip())
+        snippet = _html_lib.unescape(snippet.strip()) if snippet else ""
+        idx = len(results) + 1
+        line = f"{idx}. [{title}]({url})"
+        if snippet:
+            line += f"\n   {snippet}"
+        results.append(line)
 
-        snippet = ""
-        if i < len(snippets):
-            snippet = re.sub(r'<[^>]+>', '', snippets[i]).strip()
-            snippet = _html_lib.unescape(snippet)
+    # 1. Abstract (instant answer) — if present
+    abstract = (data.get("Abstract") or "").strip()
+    abstract_url = (data.get("AbstractURL") or "").strip()
+    heading = (data.get("Heading") or "").strip()
+    if abstract:
+        title = heading or abstract_url or "Abstract"
+        _add_result(abstract_url or DDG_API_URL, title, abstract)
 
-        results.append(f"{i+1}. [{title}]({url})\n   {snippet}")
+    # 2. RelatedTopics
+    for topic in data.get("RelatedTopics") or []:
+        if isinstance(topic, dict):
+            text = (topic.get("Text") or "").strip()
+            url = (topic.get("FirstURL") or "").strip()
+            if text:
+                # Text often is "Title — snippet"
+                if " — " in text:
+                    parts = text.split(" — ", 1)
+                    title = parts[0].strip()
+                    snippet = parts[1].strip()
+                else:
+                    title = text
+                    snippet = ""
+                _add_result(url, title, snippet)
+
+    # 3. Results field (if present)
+    for item in data.get("Results") or []:
+        if isinstance(item, dict):
+            url = (item.get("FirstURL") or "").strip()
+            text = (item.get("Text") or "").strip()
+            if text:
+                if " — " in text:
+                    parts = text.split(" — ", 1)
+                    title = parts[0].strip()
+                    snippet = parts[1].strip()
+                else:
+                    title = text
+                    snippet = ""
+                _add_result(url, title, snippet)
 
     if not results:
         return "(no results found)"
@@ -142,39 +171,37 @@ def run_web_search(query: str,
 # ── Web Fetch ──
 def run_web_fetch(url: str, prompt: str = "") -> str:
     """Fetch a URL and extract readable text content."""
-    requests = _get_requests()
-    if not requests:
-        return "Error: 'requests' package not installed. Run: pip install requests"
+    httpx = _get_httpx()
+    if not httpx:
+        return "Error: 'httpx' package not installed. Run: pip install httpx"
 
     # Normalize URL
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
 
     try:
-        resp = requests.get(
+        with httpx.stream(
+            "GET",
             url,
             headers={"User-Agent": USER_AGENT},
             timeout=FETCH_TIMEOUT,
-            stream=True,
-            allow_redirects=True,
-        )
-        resp.raise_for_status()
+        ) as resp:
+            resp.raise_for_status()
 
-        # Check content-type — only fetch HTML/text
-        ct = resp.headers.get("content-type", "").lower()
-        if "text" not in ct and "html" not in ct and "xml" not in ct:
-            return f"Error: unsupported content-type '{ct}' for text extraction"
+            # Check content-type — only fetch HTML/text
+            ct = resp.headers.get("content-type", "").lower()
+            if "text" not in ct and "html" not in ct and "xml" not in ct:
+                return f"Error: unsupported content-type '{ct}' for text extraction"
 
-        # Read up to MAX_FETCH_SIZE
-        chunks = []
-        total = 0
-        for chunk in resp.iter_content(chunk_size=8192, decode_unicode=False):
-            if chunk:
-                chunks.append(chunk)
-                total += len(chunk)
-                if total >= MAX_FETCH_SIZE:
-                    break
-        resp.close()
+            # Read up to MAX_FETCH_SIZE
+            chunks = []
+            total = 0
+            for chunk in resp.iter_bytes(chunk_size=8192):
+                if chunk:
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total >= MAX_FETCH_SIZE:
+                        break
 
         raw = b"".join(chunks)
         # Try UTF-8 first, then fall back to detected encoding

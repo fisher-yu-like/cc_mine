@@ -308,6 +308,14 @@ def main(argv: list[str] | None = None):
     # Create all runtime directories once before anything else
     config.ensure_directories()
 
+    # Clear stale session/output data from previous runs
+    import shutil
+    for _d in [config.TRANSCRIPT_DIR, config.TOOL_RESULTS_DIR,
+               config.SESSIONS_DIR, config.TASK_OUTPUTS_DIR]:
+        if _d.exists():
+            shutil.rmtree(_d, ignore_errors=True)
+            _d.mkdir(parents=True, exist_ok=True)
+
     from planning import init_planning
     init_planning(config.WORKDIR)
 

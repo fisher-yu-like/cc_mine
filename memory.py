@@ -2,7 +2,7 @@ import AutonomousAgent
 import mcp
 from bg_task import collect_background_results
 from config import MEMORY_DIR, MEMORY_INDEX, PERSIST_THRESHOLD, KEEP_RECENT_TOOL_RESULTS, TOOL_RESULTS_DIR, \
-    TRANSCRIPT_DIR, CONTEXT_LIMIT, USER_MEMORY_DIR, AGENT_MEMORY_DIR, SHARED_MEMORY_DIR
+    TRANSCRIPT_DIR, CONTEXT_LIMIT, MAX_TURNS, USER_MEMORY_DIR, AGENT_MEMORY_DIR, SHARED_MEMORY_DIR
 from call_llm import get_client as _get_client, estimate_tokens
 import json
 import time
@@ -227,13 +227,17 @@ def prepare_context(messages: list) -> list:
     cur_size = estimate_size(messages)
     before_bytes = cur_size
 
+    # Always run tool_result_budget (offloads large outputs to disk)
     messages[:] = tool_result_budget(messages)
-    messages[:] = snip_compact(messages)
-    messages[:] = micro_compact(messages)
+
+    # Only run aggressive compression when context is actually large
+    if cur_size >= 20000:
+        messages[:] = snip_compact(messages)
+        messages[:] = micro_compact(messages)
 
     # Recompute only after layers 1-3 changed messages (compact may skip)
     cur_size = estimate_size(messages)
-    if cur_size > CONTEXT_LIMIT:
+    if cur_size > 30000 or len(messages) > MAX_TURNS:
         messages[:] = compact_history(messages)
         cur_size = estimate_size(messages)
 
@@ -360,13 +364,18 @@ def _summarize_section(messages: list) -> str:
     conversation = "\n".join(compact_lines)[:30000]
 
     prompt = (
-        "Summarize this coding session segment. List:\n"
-        "1. Files read and key findings from each\n"
-        "2. Commands run and their results\n"
-        "3. Code changes made and why\n"
-        "4. Decisions or conclusions reached\n"
-        "5. Errors encountered and resolutions\n"
-        "Be concise. This summary replaces the full history to save context.\n\n"
+        "Summarize this coding session segment. PRESERVE specific details — "
+        "the summary replaces the full history and must allow work to continue "
+        "without losing context.\n"
+        "CRITICAL: Keep ALL file paths, function names, class names, and variable names exactly.\n"
+        "Do NOT paraphrase code identifiers — copy them verbatim.\n\n"
+        "List:\n"
+        "1. Files read — full path + key findings (function names, bugs, patterns)\n"
+        "2. Commands run — exact command + key results (exit code, output highlights)\n"
+        "3. Code changes — exact file paths + what changed + why (before/after)\n"
+        "4. Decisions & conclusions — what was decided, ruled out, or chosen and why\n"
+        "5. Errors & fixes — what broke, why, and how it was resolved\n"
+        "Be thorough on technical specifics. Omit only redundant chatter.\n\n"
         + conversation
     )
     try:
@@ -385,7 +394,7 @@ def _summarize_section(messages: list) -> str:
 def snip_compact(messages: list, max_messages: int = 50) -> list:
     if len(messages) <= max_messages:
         return messages
-    keep_head, keep_tail = 3, max_messages - 3
+    keep_head, keep_tail = 8, max_messages - 8
     snipped = len(messages) - keep_head - keep_tail
     middle = messages[keep_head:len(messages) - keep_tail]
 
@@ -415,7 +424,7 @@ def _tool_result_digest(msg: dict) -> str:
 
     return (
         f"[Compacted {name} result — was {content_len} chars. "
-        f"Key info preserved; re-run only if you need the full output.]\n"
+        f"DO NOT RE-RUN. This work is already done. The full result is archived.]\n"
         f"{head}{separator}{tail}"
     )
 

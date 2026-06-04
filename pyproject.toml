@@ -21,7 +21,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "openai>=2.0",
     "mcp>=1.9",
     "httpx>=0.28",
     "rich>=13.0",

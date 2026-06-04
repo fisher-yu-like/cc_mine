@@ -153,17 +153,23 @@ def has_tool_use(choice_message) -> bool:
 
 # ── 3. 子智能体孵化主函数 (OpenAI 适配版) ──
 def spawn_subagent(description: str) -> str:
+    # ── Transparent: show subagent start ──
+    short_desc = description[:80].replace('\n', ' ')
+    print(f"\n  \033[36m╭─ SUBAGENT ─────────────────────────────\033[0m")
+    print(f"  \033[36m│\033[0m \033[1m{short_desc}\033[0m")
+
     # 消息队列初始化
     messages = [
-        {"role": "system", "content": SUB_SYSTEM},  # 显式注入子智能体专属人格
+        {"role": "system", "content": SUB_SYSTEM},
         {"role": "user", "content": description}
     ]
 
-    # 严格限流：最多允许子智能体连续思考、交互 30 轮，防止死循环烧干 Token
     from ErrorRecovery import RecoveryState, with_retry
     sub_state = RecoveryState()
+    turn_count = 0
 
     for _ in range(30):
+        turn_count += 1
         try:
             # 呼叫 OpenAI 接口（带重试 + 模型降级）
             response = with_retry(
@@ -236,8 +242,10 @@ def spawn_subagent(description: str) -> str:
         if msg["role"] == "assistant" and msg.get("content"):
             text = extract_text(msg["content"])
             if text:
+                print(f"  \033[36m╰─ DONE ({turn_count} turns) ─────────────────────\033[0m\n")
                 return text
 
+    print(f"  \033[36m╰─ DONE ({turn_count} turns) ─────────────────────\033[0m\n")
     return "Subagent finished without a text summary."
 
 

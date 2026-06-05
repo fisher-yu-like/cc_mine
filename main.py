@@ -66,6 +66,27 @@ def agent_loop(messages:list,context:dict):
             import json as _json
             return f"{t_name}:{_json.dumps(t_input, sort_keys=True)[:200]}"
 
+    def _describe_tool(t_name: str, t_input: dict) -> str:
+        """Human-readable one-liner for TUI display."""
+        if t_name == "bash":
+            return f"$ {str(t_input.get('command', ''))[:80]}"
+        elif t_name == "read_file":
+            return f"read {t_input.get('path', '?')}"
+        elif t_name == "write_file":
+            return f"write {t_input.get('path', '?')}"
+        elif t_name == "edit_file":
+            return f"edit {t_input.get('path', '?')}"
+        elif t_name == "glob":
+            return f"glob {t_input.get('pattern', '?')}"
+        elif t_name == "grep":
+            return f"grep {t_input.get('pattern', '?')}"
+        elif t_name == "task":
+            return f"spawn {t_input.get('description', '?')[:60]}"
+        elif t_name in ("web_search", "web_fetch"):
+            return f"{t_name} {str(t_input.get('query', t_input.get('url', '?')))[:60]}"
+        else:
+            return f"{t_name}"
+
     while True:
         turn_count += 1
         if turn_count == MAX_TURNS:
@@ -262,19 +283,30 @@ def agent_loop(messages:list,context:dict):
                 _guard_repetition_fired = False
                 _guard_readonly_fired = False
 
-                # ── Store output + render with collapsible preview ──
+                # ── Store output + render ──
                 from output_manager import store_output, get_collapse_default
                 full_text = str(output)
                 output_idx = store_output(tool_name, full_text)
+
+                # ── TUI mode: render to full-screen Live layout ──
+                from tui import get_active as tui_active
+                _tui = tui_active()
+                if _tui:
+                    desc = _describe_tool(tool_name, tool_input)
+                    _tui.render_tool(tool_name, desc, full_text)
+                    _tui.set_status(f"Running... [{tool_name}] {desc[:50]}")
+
+                # ── Inline render (only when not in TUI mode) ──
                 collapsed = get_collapse_default()
-                if collapsed:
-                    preview = '\n'.join(full_text.split('\n')[:8])
-                    render_tool_output(tool_name, preview,
-                                       collapsed=True, output_index=output_idx - 1,
-                                       full_output=full_text)
-                else:
-                    render_tool_output(tool_name, full_text,
-                                       collapsed=False, output_index=output_idx - 1)
+                if not _tui:
+                    if collapsed:
+                        preview = '\n'.join(full_text.split('\n')[:8])
+                        render_tool_output(tool_name, preview,
+                                           collapsed=True, output_index=output_idx - 1,
+                                           full_output=full_text)
+                    else:
+                        render_tool_output(tool_name, full_text,
+                                           collapsed=False, output_index=output_idx - 1)
 
                 # ── Test failure detection (non-zero exit code on test commands) ──
                 if tool_name == "bash":
@@ -555,22 +587,30 @@ def main(argv: list[str] | None = None):
         from output_manager import clear_outputs
         clear_outputs()
         try:
-            with agent_lock:
-                agent_loop(history, context)
-                context = update_context(context, history)
+            # ── Start TUI for full-screen agent output ──
+            from tui import AgentTUI
+            _tui = AgentTUI()
+            _tui.start()
+            try:
+                with agent_lock:
+                    agent_loop(history, context)
+                    context = update_context(context, history)
+                # Agent finished normally — render assistant response
                 print_turn_assistants(history, turn_start)
                 # Auto-save after each completed turn (and clear crash flag)
                 save_session(history, context, config.WORKDIR, _auto_session_id,
                              args.session_label)
                 clear_crash_flag(config.WORKDIR)  # successful turn = no longer crashed
+            finally:
+                _tui.stop()
         except KeyboardInterrupt:
-            print(f"\n  \033[33m[interrupted] saving session...\033[0m")
+            # TUI already stopped by the finally above if we were in agent_loop
+            print(f"\n  \033[33m[interrupted] returning to REPL...\033[0m")
             try:
                 save_session(history, context, config.WORKDIR, _auto_session_id,
                              f"{args.session_label}-interrupted", crashed=True)
-                print(f"  \033[32m[save] session saved, returning to REPL\033[0m")
             except Exception:
-                print(f"  \033[31m[save] failed to save\033[0m")
+                pass
             print()
 
         inbox = consume_lead_inbox(route_protocol=True)

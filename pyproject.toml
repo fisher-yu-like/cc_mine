@@ -75,7 +75,6 @@ py-modules = [
     "task",
     "terminal_renderer",
     "tool_registry",
-    "tui",
     "workflow",
     "worktree",
 ]

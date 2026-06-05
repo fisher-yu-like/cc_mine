@@ -219,36 +219,68 @@ def _strip_orphan_tools(messages: list) -> list:
     return cleaned
 
 
+def _find_last_user_idx(messages: list) -> int:
+    """Return the index of the LAST user message in the list.
+
+    Messages FROM this index onwards belong to the CURRENT turn and
+    must NEVER be compacted. Only messages BEFORE this index (previous
+    turns) are eligible for compaction.
+    """
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "user":
+            return i
+    return 0
+
+
 # ── 上下文准备 ──
 def prepare_context(messages: list) -> list:
+    """Compact OLD conversation turns, preserving the CURRENT turn intact.
+
+    The current turn (everything from the last user message onwards)
+    is NEVER touched — this ensures the agent always sees the user's
+    latest request and all tool output / assistant responses from the
+    current turn in full.
+    """
     before = len(messages)
+    before_bytes = estimate_size(messages)
 
-    # Compute size ONCE before the pipeline — avoid redundant O(n) json.dumps
-    cur_size = estimate_size(messages)
-    before_bytes = cur_size
+    # ── Split: [old turns ...] [current turn: last user msg → end] ──
+    split_at = _find_last_user_idx(messages)
+    old = messages[:split_at]
+    current = messages[split_at:]
 
-    # Always run tool_result_budget (offloads large outputs to disk)
-    messages[:] = tool_result_budget(messages)
+    if not old:
+        # Only one turn so far — nothing to compact
+        messages[:] = _strip_orphan_tools(messages)
+        return messages
 
-    # Only run aggressive compression when context is substantially large
-    if cur_size >= 40000:
-        messages[:] = snip_compact(messages)
-        messages[:] = micro_compact(messages)
+    old_size = estimate_size(old)
 
-    # Recompute only after layers 1-3 changed messages (compact may skip)
-    cur_size = estimate_size(messages)
-    if cur_size > 60000 or len(messages) > MAX_TURNS:
-        messages[:] = compact_history(messages)
-        cur_size = estimate_size(messages)
+    # Layer 1: offload large tool outputs to disk (always safe)
+    old = tool_result_budget(old)
 
+    # Layers 2-3: aggressive compression on old turns only
+    if old_size >= 40000:
+        old = snip_compact(old)
+        old = micro_compact(old)
+
+    # Layer 4: full AI summary of old turns
+    old_size = estimate_size(old)
+    if old_size > 60000 or len(old) > MAX_TURNS:
+        old = compact_history(old, label="context compact")
+
+    # ── Rejoin: compacted old + pristine current ──
+    messages[:] = old + current
     messages[:] = _strip_orphan_tools(messages)
+
     after = len(messages)
-    after_bytes = cur_size
+    after_bytes = estimate_size(messages)
 
     if before != after or before_bytes != after_bytes:
         est = estimate_tokens(messages)
         print(f"  \033[90m[context] {before}→{after} msgs, ~{est} tok, "
-              f"{before_bytes//1024}KB→{after_bytes//1024}KB\033[0m")
+              f"{before_bytes//1024}KB→{after_bytes//1024}KB "
+              f"(current turn: {len(current)} msgs preserved)\033[0m")
     return messages
 
 

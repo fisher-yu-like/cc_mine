@@ -308,7 +308,7 @@ BUILTIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "python",
-            "description": "Execute a Python script in ONE call. Use for multi-step logic: loops, data processing, batch file ops, API calls. Avoids N roundtrips for sequential operations. Script runs in the project directory with access to all installed packages.",
+            "description": "Execute a Python script in ONE call. This is the PREFERRED tool for any task needing more than 2 bash commands, loops, data processing, batch file ops, JSON/CSV parsing, or API calls. NEVER call read_file/bash in a loop — write a Python script instead. Script runs in the project directory with access to all installed packages.",
             "parameters": {
                 "type": "object",
                 "properties": {

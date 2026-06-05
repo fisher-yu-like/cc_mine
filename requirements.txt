@@ -1,0 +1,35 @@
+# ── cc_mine 核心依赖 ──
+# Claude Code clone — interactive AI coding agent in the terminal
+#
+# 安装: pip install -r requirements.txt
+# Python >= 3.12 必需
+
+# ── HTTP 客户端（自定义 OpenAI-compatible client 底层） ──
+httpx>=0.28
+
+# ── 终端渲染（Markdown、语法高亮、面板、表格） ──
+rich>=13.0
+
+# ── 交互式输入（多行编辑、语法高亮、自动补全） ──
+prompt_toolkit>=3.0.43
+
+# ── 跨平台 ANSI 颜色支持 ──
+colorama>=0.4
+
+# ── 环境变量加载（.env 文件） ──
+python-dotenv>=1.0
+
+# ── MCP 协议支持（Model Context Protocol） ──
+mcp>=1.9
+
+# ── YAML 解析（Skill 文件 frontmatter） ──
+pyyaml>=6.0
+
+# ── 可选：PDF 文本提取（多模态附件支持） ──
+# PyPDF2>=3.0
+# pikepdf>=8.0
+
+# ── 开发依赖 ──
+# pytest>=8
+# bandit>=1.9
+# pygments>=2.20

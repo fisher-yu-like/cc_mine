@@ -1,38 +1,56 @@
+"""
+cc_mine 全局配置模块
+====================
+
+集中管理所有路径、常量、运行时目录和提示词模板。
+模块加载时自动解析 WORKDIR（从环境变量 CC_MINE_WORKDIR 或当前目录）。
+"""
+
+from __future__ import annotations
+
 import os as _os
 from pathlib import Path
 
+
+# ═══════════════════════════════════════════════════════════════
+# 工作目录解析
+# ═══════════════════════════════════════════════════════════════
+
 def _resolve_workdir() -> Path:
-    """WORKDIR from CC_MINE_WORKDIR env var, falling back to cwd if not set."""
+    """从 CC_MINE_WORKDIR 环境变量读取工作目录，未设置则回退到当前目录。"""
     env_val = _os.getenv("CC_MINE_WORKDIR", "").strip()
     if env_val:
         return Path(env_val).resolve()
     return Path.cwd()
 
-WORKDIR = _resolve_workdir()
-SKILLS_DIR = WORKDIR / "skills"
-TRANSCRIPT_DIR = WORKDIR / ".transcripts"
-TOOL_RESULTS_DIR = WORKDIR / ".task_outputs" / "tool-results"
-TASKS_DIR = WORKDIR / ".tasks"
-DEFAULT_MAX_TOKENS = 8000
-ESCALATED_MAX_TOKENS = 16000
-MAX_RETRIES = 3
-MAX_CONSECUTIVE_529 = 2
-MAX_RECOVERY_RETRIES = 2
-BASE_DELAY_MS = 500
-CONTEXT_LIMIT = 50000
-KEEP_RECENT_TOOL_RESULTS = 30
-PERSIST_THRESHOLD = 30000
-MAX_TURNS = 100  # agent loop max iterations before forced summary exit
-CONTINUATION_PROMPT = "Continue from the previous response. Do not repeat completed work."
-PROMPT = "\033[36mcc_mine > \033[0m"
-CLI_ACTIVE = False
-MAILBOX_DIR = WORKDIR / ".mailboxes"
-WORKTREES_DIR = WORKDIR / ".worktrees"
 
+WORKDIR: Path = _resolve_workdir()
+
+
+# ═══════════════════════════════════════════════════════════════
+# 子目录路径
+# ═══════════════════════════════════════════════════════════════
+
+SKILLS_DIR: Path = WORKDIR / "skills"
+TRANSCRIPT_DIR: Path = WORKDIR / ".transcripts"
+TOOL_RESULTS_DIR: Path = WORKDIR / ".task_outputs" / "tool-results"
+TASKS_DIR: Path = WORKDIR / ".tasks"
+MAILBOX_DIR: Path = WORKDIR / ".mailboxes"
+WORKTREES_DIR: Path = WORKDIR / ".worktrees"
+PLANS_DIR: Path = WORKDIR / ".cc_mine" / "plans"
+SESSIONS_DIR: Path = WORKDIR / ".cc_mine" / "sessions"
+LOGS_DIR: Path = WORKDIR / ".cc_mine" / "logs"
+TASK_OUTPUTS_DIR: Path = WORKDIR / ".task_outputs"
+DURABLE_PATH: Path = WORKDIR / ".scheduled_tasks.json"
+CC_MINE_MD_PATH: Path = WORKDIR / "CC_MINE.md"
+
+
+# ═══════════════════════════════════════════════════════════════
+# 记忆目录（支持 worktree 共享）
+# ═══════════════════════════════════════════════════════════════
 
 def _resolve_memory_dir() -> Path:
-    """If running inside a worktree, use the parent project's .memory/ so
-    memories are shared across worktree sessions."""
+    """如果在 worktree 中运行，使用父项目的 .memory/ 共享记忆。"""
     wd = WORKDIR
     if ".worktrees" in str(wd):
         parent = wd
@@ -43,28 +61,54 @@ def _resolve_memory_dir() -> Path:
     return wd / ".memory"
 
 
-MEMORY_DIR = _resolve_memory_dir()
-MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
-USER_MEMORY_DIR = MEMORY_DIR / "user"
-AGENT_MEMORY_DIR = MEMORY_DIR / "agent"
-SHARED_MEMORY_DIR = MEMORY_DIR / "shared"
-DURABLE_PATH = WORKDIR / ".scheduled_tasks.json"
-PLANS_DIR = WORKDIR / ".cc_mine" / "plans"
-SESSIONS_DIR = WORKDIR / ".cc_mine" / "sessions"
-LOGS_DIR = WORKDIR / ".cc_mine" / "logs"
-TASK_OUTPUTS_DIR = WORKDIR / ".task_outputs"
-IDLE_POLL_INTERVAL = 5
-IDLE_TIMEOUT = 60
+MEMORY_DIR: Path = _resolve_memory_dir()
+MEMORY_INDEX: Path = MEMORY_DIR / "MEMORY.md"
+USER_MEMORY_DIR: Path = MEMORY_DIR / "user"
+AGENT_MEMORY_DIR: Path = MEMORY_DIR / "agent"
+SHARED_MEMORY_DIR: Path = MEMORY_DIR / "shared"
 
 
-def ensure_directories():
-    """Create all required runtime directories once at startup.
+# ═══════════════════════════════════════════════════════════════
+# Token / 重试 / 上下文限制
+# ═══════════════════════════════════════════════════════════════
 
-    Called once from main() before the agent loop begins. This avoids
-    repeated mkdir(parents=True, exist_ok=True) calls scattered across
-    the codebase, reducing token waste from error messages and noise.
+DEFAULT_MAX_TOKENS: int = 8000
+ESCALATED_MAX_TOKENS: int = 16000
+MAX_RETRIES: int = 3
+MAX_CONSECUTIVE_529: int = 2
+MAX_RECOVERY_RETRIES: int = 2
+BASE_DELAY_MS: int = 500
+CONTEXT_LIMIT: int = 50000
+KEEP_RECENT_TOOL_RESULTS: int = 30
+PERSIST_THRESHOLD: int = 30000
+MAX_TURNS: int = 100
+IDLE_POLL_INTERVAL: int = 5
+IDLE_TIMEOUT: int = 60
+
+
+# ═══════════════════════════════════════════════════════════════
+# 提示词 & CLI 常量
+# ═══════════════════════════════════════════════════════════════
+
+CONTINUATION_PROMPT: str = (
+    "Continue from the previous response. Do not repeat completed work."
+)
+
+PROMPT: str = "\033[36mcc_mine > \033[0m"
+CLI_ACTIVE: bool = False
+
+
+# ═══════════════════════════════════════════════════════════════
+# 运行时目录初始化
+# ═══════════════════════════════════════════════════════════════
+
+def ensure_directories() -> None:
+    """在启动时一次性创建所有必需的运行时目录。
+
+    由 main() 在 agent loop 开始前调用，避免在代码中分散
+    重复调用 mkdir(parents=True, exist_ok=True)。
     """
-    dirs = [
+    dirs: list[Path] = [
         SKILLS_DIR,
         TRANSCRIPT_DIR,
         TOOL_RESULTS_DIR,
@@ -85,14 +129,15 @@ def ensure_directories():
         d.mkdir(parents=True, exist_ok=True)
 
 
-# ── CC_MINE.md user preferences ──
-CC_MINE_MD_PATH = WORKDIR / "CC_MINE.md"
-
+# ═══════════════════════════════════════════════════════════════
+# CC_MINE.md 用户偏好加载
+# ═══════════════════════════════════════════════════════════════
 
 def load_cc_mine_md() -> str:
-    """Load user preferences from CC_MINE.md. Returns '' if not found."""
+    """加载 CC_MINE.md 中的用户偏好。文件不存在则返回空字符串。"""
     if not CC_MINE_MD_PATH.exists():
         return ""
+
     try:
         content = CC_MINE_MD_PATH.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -101,64 +146,53 @@ def load_cc_mine_md() -> str:
     if not content.strip():
         return ""
 
-    # Warn if unusually long (>2000 chars wastes tokens every call)
+    # 超过 2000 字符时警告（每次调用都会消耗 token）
     if len(content) > 2000:
-        print(f"  \033[33m[warning] CC_MINE.md is {len(content)} chars. "
-              f"Consider keeping it under 2000 to save tokens.\033[0m")
+        print(
+            f"  \033[33m[warning] CC_MINE.md is {len(content)} chars. "
+            f"Consider keeping it under 2000 to save tokens.\033[0m"
+        )
 
     return content
 
 
-PROMPT_SECTIONS = {
+# ═══════════════════════════════════════════════════════════════
+# 系统提示词模版
+# ═══════════════════════════════════════════════════════════════
+
+PROMPT_SECTIONS: dict[str, str] = {
     "identity": (
-        "You are cc_mine, the LEAD orchestrator agent. You are NOT a worker — you are a PLANNER and DELEGATOR.\n"
-        "Your core loop: plan → delegate → observe result → plan next → repeat until done.\n\n"
-        "## YOUR ROLE (CRITICAL — read carefully)\n"
-        "You are FORBIDDEN from touching files or running commands directly.\n"
-        "You do NOT use: bash, read_file, write_file, edit_file, glob.\n"
-        "Those are worker tools. You are not a worker. You are the conductor of an orchestra.\n\n"
-        "Your ONLY job is to:\n"
-        "1. PLAN: Break the user's request into steps (todo_write).\n"
-        "2. DELEGATE: For each step, spawn a subagent (task) to do the actual work.\n"
-        "3. OBSERVE: Read the subagent's result, decide if more work is needed.\n"
-        "4. REPORT: When done, summarize everything accomplished.\n\n"
+        "You are cc_mine, an AI coding agent. Work directly in the user's project.\n\n"
+        "## WORKING DIRECTORY\n"
+        f"Your working directory is: {WORKDIR}\n"
+        "This is the USER's project — NOT cc_mine source code. Only read/edit files here.\n"
+        "Do NOT read cc_mine's own source files unless the user explicitly asks about cc_mine itself.\n\n"
+        "## HOW YOU WORK\n"
+        "For SIMPLE tasks: use bash, read_file, write_file, edit_file, glob, grep DIRECTLY.\n"
+        "  - Read one file → read_file. Run a command → bash. Search → glob/grep.\n"
+        "  - This is fast, cheap, and what the user expects.\n\n"
+        "For COMPLEX multi-step tasks: spawn a subagent with `task`.\n"
+        "  - Use task when the job needs 5+ tool calls, multiple files, or independent work.\n"
+        "  - The subagent returns a summary when done.\n\n"
+        "For VERY COMPLEX architectural tasks: call `enter_plan_mode` to design a plan first.\n"
+        "  - 3+ files with architectural decisions, new features, or refactoring.\n"
+        "  - The plan is written as a .md file for the user to review and edit.\n\n"
         "## CRITICAL: ONE Active Todo Only\n"
-        "You MUST keep EXACTLY ONE todo item `in_progress` at all times. Never list multiple items.\n"
-        "When you finish the current item, replace it with the next ONE. This keeps focus razor-sharp.\n"
-        "Format: todo_write with a SINGLE item: {\"content\": \"...\", \"status\": \"in_progress\", \"activeForm\": \"...\"}\n\n"
-        "## Plan Mode for Complex Tasks (CRITICAL)\n"
-        "For COMPLEX tasks, call `enter_plan_mode` FIRST before doing anything else.\n"
-        "A task is COMPLEX if ANY of these are true:\n"
-        "- Involves 3+ files (reading or editing)\n"
-        "- Architectural decisions (new modules, design patterns, refactoring)\n"
-        "- Brand new feature (not a bugfix or minor enhancement)\n"
-        "- 4+ distinct implementation steps\n"
-        "- User says: design, architect, refactor, restructure, plan, impl, build\n\n"
-        "For SIMPLE tasks (single-file edit, one-line fix, read-only query), skip plan mode.\n\n"
-        "When entering plan mode: (1) call enter_plan_mode immediately, (2) explore codebase,\n"
-        "(3) design concrete plan with ordered steps + specific files,\n"
-        "(4) call submit_plan with details about approach and risks,\n"
-        "(5) WAIT for user approval — do NOT proceed until [Plan Approved].\n\n"
-        "## Philosophy\n"
-        "- You plan, workers execute. Never cross this line.\n"
-        "- Single specific job → task (subagent). The subagent's work is TRANSPARENT — its bash output is shown to the user.\n"
-        "- Subagents CANNOT spawn more agents. They have: bash, read_file, write_file, edit_file, glob.\n\n"
-        "## Response Style\n"
-        "- First: ONE todo_write with your current task.\n"
-        "- Spawn a subagent (task) to do the actual work.\n"
-        "- When subagent finishes: update the ONE todo to the next step (or mark completed if done).\n"
-        "- When all done: final summary. Use Chinese when the user writes in Chinese.\n\n"
-        "## Task Completion (CRITICAL)\n"
-        "When ALL subagents have returned success and the user's request is fulfilled:\n"
-        "- Respond with ONLY a text summary. Do NOT call any more tools.\n"
-        "- Do NOT spawn a subagent to \"verify\" — trust the results you already have.\n"
-        "- Do NOT check the same thing twice — one read is enough.\n"
-        "Signs your task is DONE: todo all completed, all subagents returned success.\n"
-        "When done: JUST WRITE THE SUMMARY. NO TOOL CALLS.\n\n"
-        "## When Tests Fail\n"
-        "When a test command fails (non-zero exit code), web_search the specific error\n"
-        "message BEFORE attempting a fix. Do NOT guess. Read the error carefully,\n"
-        "find the root cause, then apply the minimal fix."
+        "Keep EXACTLY ONE todo item `in_progress`. Update after each step.\n\n"
+        "## Decision Guide\n"
+        "- Single command or query → do it yourself (bash / read_file / glob)\n"
+        "- Edit one file → do it yourself (read_file then edit_file)\n"
+        "- Multi-step with loops/data → python (execute a script in one call)\n"
+        "- Complex multi-file work → task (subagent)\n"
+        "- Architectural / new feature → enter_plan_mode first\n\n"
+        "## Plan Mode for Complex Tasks\n"
+        "A task is COMPLEX if: 3+ files, architectural decisions, new feature, 4+ steps,\n"
+        "or user says design/architect/refactor/plan.\n"
+        "In plan mode: explore the USER's codebase (not cc_mine), design plan, submit for approval.\n\n"
+        "## When Done\n"
+        "Task complete → text summary. No more tools. No verification re-reads.\n"
+        "Tests fail → web_search the error first. Don't guess.\n"
+        "Use Chinese when the user writes in Chinese."
     ),
     "subagent_identity": (
         "You are a coding WORKER subagent. Your job is to execute ONE specific task and return results.\n"
@@ -217,9 +251,9 @@ PROMPT_SECTIONS = {
         "**python**: Execute a Python script in ONE call. Use this instead of multiple bash/read_file\n"
         "roundtrips when you need loops, data processing, or multi-step logic.\n\n"
         "Examples where python beats N roundtrips:\n"
-        "- \"Find all JSON files, sum the 'price' field, print the total\" → 1 python call vs 3+ bash calls\n"
-        "- \"Read every .py file, extract all TODO comments, write to TODOS.md\" → 1 python call\n"
-        "- \"Parse test_results.xml, find failed tests, search web for each error\" → 1 python call\n\n"
+        '- "Find all JSON files, sum the \'price\' field, print the total" → 1 python call vs 3+ bash calls\n'
+        '- "Read every .py file, extract all TODO comments, write to TODOS.md" → 1 python call\n'
+        '- "Parse test_results.xml, find failed tests, search web for each error" → 1 python call\n\n'
         "Decision guide:\n"
         "- Single command → bash\n"
         "- Read/edit one file → read_file / edit_file\n"

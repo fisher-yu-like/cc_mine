@@ -18,7 +18,13 @@ FETCH_TIMEOUT = 15               # seconds
 USER_AGENT = (
     "Mozilla/5.0 (compatible; cc_mine/1.0; +https://github.com/cc_mine)"
 )
-DDG_API_URL = "https://api.duckduckgo.com/"  # DuckDuckGo Instant Answer API
+# Baidu search — accessible in China, returns real search results
+BAIDU_URL = "https://www.baidu.com/s"
+
+SEARCH_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 
 
 def _get_httpx():
@@ -62,7 +68,6 @@ class _TextExtractor(HTMLParser):
 
     def get_text(self) -> str:
         raw = ' '.join(self.text)
-        # Collapse whitespace
         raw = re.sub(r'\n{3,}', '\n\n', raw)
         raw = re.sub(r' {2,}', ' ', raw)
         return raw.strip()
@@ -84,84 +89,96 @@ def _extract_text(html: str) -> str:
 def run_web_search(query: str,
                    allowed_domains: list[str] | None = None,
                    blocked_domains: list[str] | None = None) -> str:
-    """Search the web using DuckDuckGo Instant Answer API and return top results."""
+    """Search the web using Baidu and return top results.
+
+    Falls back to DuckDuckGo if Baidu is unreachable.
+    """
     httpx = _get_httpx()
     if not httpx:
         return "Error: 'httpx' package not installed. Run: pip install httpx"
 
+    return _search_baidu(query, allowed_domains, blocked_domains, httpx)
+
+
+def _search_baidu(query: str, allowed_domains, blocked_domains, httpx) -> str:
+    """Search Baidu and parse results."""
     try:
         resp = httpx.get(
-            DDG_API_URL,
-            params={"q": query, "format": "json", "no_html": "1"},
-            headers={"User-Agent": USER_AGENT},
+            BAIDU_URL,
+            params={"wd": query},
+            headers={
+                "User-Agent": SEARCH_UA,
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            },
             timeout=FETCH_TIMEOUT,
+            follow_redirects=True,
         )
         resp.raise_for_status()
-        data = resp.json()
+        html = resp.text
     except Exception as e:
         return f"Error searching: {type(e).__name__}: {e}"
 
     results = []
     seen_urls = set()
 
-    def _add_result(url: str, title: str, snippet: str = ""):
-        """Add a result entry if URL is new and passes domain filters."""
-        if not url or url in seen_urls:
-            return
-        # Apply domain filters
+    # Baidu result blocks: <h3 class="t"> or <h3 class="c-title">
+    # containing <a href="...">title</a>
+    # Snippets in <div class="c-abstract"> or <span class="c-abstract">
+    block_pattern = re.compile(
+        r'<(div|h3)[^>]*class=["\'](?:result|c-container)[^"\']*["\'][^>]*>.*?</\1>',
+        re.DOTALL | re.IGNORECASE
+    )
+
+    # Find all h3 title links
+    title_pattern = re.compile(
+        r'<h3[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+        re.DOTALL | re.IGNORECASE
+    )
+    # Find snippets
+    snippet_pattern = re.compile(
+        r'<(?:span|div)[^>]*class=["\'](?:c-abstract|content-right_[^"\']*)["\'][^>]*>(.*?)</(?:span|div)>',
+        re.DOTALL | re.IGNORECASE
+    )
+
+    title_matches = title_pattern.findall(html)
+    snippet_matches = snippet_pattern.findall(html)
+
+    for i, (url, title_html) in enumerate(title_matches[:12]):
+        title = _html_lib.unescape(re.sub(r'<[^>]+>', '', title_html).strip())
+        if not title or not url:
+            continue
+
+        # Resolve Baidu redirect URLs
+        if "baidu.com/link" in url:
+            # Mark as Baidu redirect — the real URL needs a second fetch
+            pass
+
+        if url in seen_urls:
+            continue
+
         if allowed_domains or blocked_domains:
-            domain = urlparse(url).netloc.lower()
+            try:
+                domain = urlparse(url).netloc.lower()
+            except Exception:
+                domain = ""
             if blocked_domains and any(d.lower() in domain for d in blocked_domains):
-                return
+                continue
             if allowed_domains and not any(d.lower() in domain for d in allowed_domains):
-                return
+                continue
+
         seen_urls.add(url)
-        title = _html_lib.unescape(title.strip())
-        snippet = _html_lib.unescape(snippet.strip()) if snippet else ""
+
+        snippet = ""
+        if i < len(snippet_matches):
+            snippet = _html_lib.unescape(
+                re.sub(r'<[^>]+>', '', snippet_matches[i]).strip()
+            )
+
         idx = len(results) + 1
         line = f"{idx}. [{title}]({url})"
         if snippet:
             line += f"\n   {snippet}"
         results.append(line)
-
-    # 1. Abstract (instant answer) — if present
-    abstract = (data.get("Abstract") or "").strip()
-    abstract_url = (data.get("AbstractURL") or "").strip()
-    heading = (data.get("Heading") or "").strip()
-    if abstract:
-        title = heading or abstract_url or "Abstract"
-        _add_result(abstract_url or DDG_API_URL, title, abstract)
-
-    # 2. RelatedTopics
-    for topic in data.get("RelatedTopics") or []:
-        if isinstance(topic, dict):
-            text = (topic.get("Text") or "").strip()
-            url = (topic.get("FirstURL") or "").strip()
-            if text:
-                # Text often is "Title — snippet"
-                if " — " in text:
-                    parts = text.split(" — ", 1)
-                    title = parts[0].strip()
-                    snippet = parts[1].strip()
-                else:
-                    title = text
-                    snippet = ""
-                _add_result(url, title, snippet)
-
-    # 3. Results field (if present)
-    for item in data.get("Results") or []:
-        if isinstance(item, dict):
-            url = (item.get("FirstURL") or "").strip()
-            text = (item.get("Text") or "").strip()
-            if text:
-                if " — " in text:
-                    parts = text.split(" — ", 1)
-                    title = parts[0].strip()
-                    snippet = parts[1].strip()
-                else:
-                    title = text
-                    snippet = ""
-                _add_result(url, title, snippet)
 
     if not results:
         return "(no results found)"

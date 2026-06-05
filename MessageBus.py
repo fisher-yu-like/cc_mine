@@ -4,7 +4,7 @@ from config import MAILBOX_DIR
 import config
 
 if not MAILBOX_DIR.exists():
-    MAILBOX_DIR.mkdir(exist_ok=True)
+    MAILBOX_DIR.mkdir(parents=True, exist_ok=True)
 import threading
 import os
 

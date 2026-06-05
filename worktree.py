@@ -7,7 +7,7 @@ from task import load_task, save_task
 from tools.git import run_git
 from  config import WORKTREES_DIR
 if not WORKTREES_DIR.exists():
-    WORKTREES_DIR.mkdir(exist_ok=True)
+    WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
 import re
 VALID_WT_NAME = re.compile(r'^[A-Za-z0-9._-]{1,64}$')
 #正则表达式确保名字符合规范，即中括号中字符，字符串长度在1--64间

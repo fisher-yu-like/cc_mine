@@ -61,7 +61,9 @@ py-modules = [
     "memory",
     "mode_manager",
     "multimodal",
+    "output_manager",
     "planning",
+    "prompt_toolkit_input",
     "query_queue",
     "repl_ui",
     "session",
@@ -73,6 +75,7 @@ py-modules = [
     "task",
     "terminal_renderer",
     "tool_registry",
+    "tui",
     "workflow",
     "worktree",
 ]

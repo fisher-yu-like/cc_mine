@@ -11,7 +11,6 @@ cli_commands.py
 config.py
 debug_tracker.py
 executor.py
-hello.py
 hooks.py
 log_setup.py
 main.py
@@ -19,7 +18,9 @@ mcp.py
 memory.py
 mode_manager.py
 multimodal.py
+output_manager.py
 planning.py
+prompt_toolkit_input.py
 pyproject.toml
 query_queue.py
 repl_ui.py
@@ -32,9 +33,11 @@ subagent.py
 task.py
 terminal_renderer.py
 tool_registry.py
+tui.py
 workflow.py
 worktree.py
 calc_bug_fix/compare_old_new.py
+calc_bug_fix/decompile_memory.py
 calc_bug_fix/math_utils.py
 calc_bug_fix/test_compaction.py
 calc_bug_fix/test_math_utils.py

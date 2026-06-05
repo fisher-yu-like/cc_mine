@@ -588,9 +588,14 @@ def main(argv: list[str] | None = None):
         clear_outputs()
         try:
             # ── Start TUI for full-screen agent output ──
-            from tui import AgentTUI
-            _tui = AgentTUI()
-            _tui.start()
+            _tui = None
+            try:
+                from tui import AgentTUI
+                _tui = AgentTUI()
+                _tui.start()
+            except Exception:
+                pass  # Fall back to inline rendering if TUI unavailable
+
             try:
                 with agent_lock:
                     agent_loop(history, context)
@@ -602,7 +607,8 @@ def main(argv: list[str] | None = None):
                              args.session_label)
                 clear_crash_flag(config.WORKDIR)  # successful turn = no longer crashed
             finally:
-                _tui.stop()
+                if _tui:
+                    _tui.stop()
         except KeyboardInterrupt:
             # TUI already stopped by the finally above if we were in agent_loop
             print(f"\n  \033[33m[interrupted] returning to REPL...\033[0m")

@@ -230,14 +230,14 @@ def prepare_context(messages: list) -> list:
     # Always run tool_result_budget (offloads large outputs to disk)
     messages[:] = tool_result_budget(messages)
 
-    # Only run aggressive compression when context is actually large
-    if cur_size >= 20000:
+    # Only run aggressive compression when context is substantially large
+    if cur_size >= 40000:
         messages[:] = snip_compact(messages)
         messages[:] = micro_compact(messages)
 
     # Recompute only after layers 1-3 changed messages (compact may skip)
     cur_size = estimate_size(messages)
-    if cur_size > 30000 or len(messages) > MAX_TURNS:
+    if cur_size > 60000 or len(messages) > MAX_TURNS:
         messages[:] = compact_history(messages)
         cur_size = estimate_size(messages)
 
@@ -391,10 +391,10 @@ def _summarize_section(messages: list) -> str:
 
 
 # ── 第二道防线：消息流腰斩 ──
-def snip_compact(messages: list, max_messages: int = 50) -> list:
+def snip_compact(messages: list, max_messages: int = 70) -> list:
     if len(messages) <= max_messages:
         return messages
-    keep_head, keep_tail = 8, max_messages - 8
+    keep_head, keep_tail = 15, max_messages - 15
     snipped = len(messages) - keep_head - keep_tail
     middle = messages[keep_head:len(messages) - keep_tail]
 
@@ -430,17 +430,30 @@ def _tool_result_digest(msg: dict) -> str:
 
 
 # ── 第三道防线：旧工具结果冷冻 ──
+# Tool names whose results should NEVER be compressed — these contain
+# subagent/task output that the lead agent needs in full to make decisions.
+_PRESERVE_TOOLS = {"task", "spawn_subagent", "spawn_teammate", "submit_plan",
+                   "enter_plan_mode", "exit_plan_mode", "update_plan_step"}
+
+
 def micro_compact(messages: list) -> list:
     tool_results = collect_tool_results(messages)
     if len(tool_results) <= KEEP_RECENT_TOOL_RESULTS:
         return messages
     frozen_count = 0
+    skipped_count = 0
     for _, msg in tool_results[:-KEEP_RECENT_TOOL_RESULTS]:
+        tool_name = msg.get("name", "")
+        if tool_name in _PRESERVE_TOOLS:
+            skipped_count += 1
+            continue  # Never compress subagent/task/plan results
         if len(str(msg.get("content", ""))) > 120:
             msg["content"] = _tool_result_digest(msg)
             frozen_count += 1
-    if frozen_count:
-        print(f"  \033[33m[micro compact] {frozen_count} old tool results condensed (keeping last {KEEP_RECENT_TOOL_RESULTS} full)\033[0m")
+    if frozen_count or skipped_count:
+        print(f"  \033[33m[micro compact] {frozen_count} tool results condensed"
+              + (f", {skipped_count} important results preserved" if skipped_count else "")
+              + f" (keeping last {KEEP_RECENT_TOOL_RESULTS} full)\033[0m")
     return messages
 
 
@@ -493,9 +506,9 @@ def compact_history(messages: list, label: str = "full compact") -> list:
         summary = summarize_history(messages)
     except Exception:
         summary = "Earlier conversation was trimmed after a prompt-too-long error."
-    print(f"  \033[33m[{label}] condensed to 1 summary + last 5 messages (was {len(messages)} total)\033[0m")
+    print(f"  \033[33m[{label}] condensed to 1 summary + last 10 messages (was {len(messages)} total)\033[0m")
     return [{"role": "user", "content": f"[Reactive compact]\n\n{summary}"},
-            *messages[-5:]]
+            *messages[-10:]]
 
 
 def reactive_compact(messages: list) -> list:

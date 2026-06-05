@@ -554,14 +554,24 @@ def main(argv: list[str] | None = None):
             history.append({"role": "user", "content": query})
         from output_manager import clear_outputs
         clear_outputs()
-        with agent_lock:
-            agent_loop(history, context)
-            context = update_context(context, history)
-            print_turn_assistants(history, turn_start)
-            # Auto-save after each completed turn (and clear crash flag)
-            save_session(history, context, config.WORKDIR, _auto_session_id,
-                         args.session_label)
-            clear_crash_flag(config.WORKDIR)  # successful turn = no longer crashed
+        try:
+            with agent_lock:
+                agent_loop(history, context)
+                context = update_context(context, history)
+                print_turn_assistants(history, turn_start)
+                # Auto-save after each completed turn (and clear crash flag)
+                save_session(history, context, config.WORKDIR, _auto_session_id,
+                             args.session_label)
+                clear_crash_flag(config.WORKDIR)  # successful turn = no longer crashed
+        except KeyboardInterrupt:
+            print(f"\n  \033[33m[interrupted] saving session...\033[0m")
+            try:
+                save_session(history, context, config.WORKDIR, _auto_session_id,
+                             f"{args.session_label}-interrupted", crashed=True)
+                print(f"  \033[32m[save] session saved, returning to REPL\033[0m")
+            except Exception:
+                print(f"  \033[31m[save] failed to save\033[0m")
+            print()
 
         inbox = consume_lead_inbox(route_protocol=True)
         if inbox:

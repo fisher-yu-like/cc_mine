@@ -158,10 +158,16 @@ def spawn_subagent(description: str) -> str:
     print(f"\n  \033[36m╭─ SUBAGENT ─────────────────────────────\033[0m")
     print(f"  \033[36m│\033[0m \033[1m{short_desc}\033[0m")
 
-    # 消息队列初始化
+    # 消息队列初始化 — inject working directory so subagent knows WHERE to work
+    from config import WORKDIR
+    context_prefix = (
+        f"[Context] Working directory: {WORKDIR}\n"
+        f"This is the USER's project — NOT cc_mine source code.\n"
+        f"Only read/edit files under {WORKDIR}. Use absolute paths in tools.\n\n"
+    )
     messages = [
         {"role": "system", "content": SUB_SYSTEM},
-        {"role": "user", "content": description}
+        {"role": "user", "content": context_prefix + description}
     ]
 
     from ErrorRecovery import RecoveryState, with_retry

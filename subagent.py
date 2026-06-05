@@ -8,7 +8,6 @@ from hooks import trigger_hooks
 from task import can_start
 from tools.bash import run_bash
 from tools.file_ops import run_read, run_write, run_edit, run_glob
-from tools.todo_write import run_todo_write
 from call_llm import get_client as _get_client
 # ── Subagent Tool (OpenAI Format) ──
 
@@ -96,40 +95,15 @@ SUB_TOOLS = [
             }
         }
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "todo_write",
-            "description": "Track your sub-steps for this task. Keep one item in_progress at a time.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "todos": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "content": {"type": "string"},
-                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}
-                            },
-                            "required": ["content", "status"]
-                        }
-                    }
-                },
-                "required": ["todos"]
-            }
-        }
-    }
 ]
 
-# 纯明文路由映射表，保持原样即可
+# 5 tools only — removed todo_write to save tokens (subagent just executes)
 SUB_HANDLERS = {
     "bash": run_bash,
     "read_file": run_read,
     "write_file": run_write,
     "edit_file": run_edit,
     "glob": run_glob,
-    "todo_write": run_todo_write,
 }
 
 

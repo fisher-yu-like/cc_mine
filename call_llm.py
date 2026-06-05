@@ -143,59 +143,66 @@ def _hash(text: str) -> str:
 
 
 def assemble_system_prompt(context: dict) -> str:
-    global _static_cache, _static_hash, _semi_cache, _semi_hash, _cache_hits, _cache_misses
+    """Return ONLY the stable identity prompt — no dynamic content.
 
-    sections = []
-
-    # ── Layer A: Static (never changes during session) ──
-    # identity + workspace + CC_MINE.md
-    cc_mine_md = ""
-    try:
-        from config import load_cc_mine_md
-        cc_mine_md = load_cc_mine_md()
-    except (ImportError, AttributeError):
-        pass
-
-    static_raw = (PROMPT_SECTIONS["identity"] + "\n\n" +
-                  PROMPT_SECTIONS["workspace"] + "\n\n" + cc_mine_md)
+    Claude Code pattern: system prompt is shared across all users for global
+    prefix caching. Dynamic content (CC_MINE.md, time, memories, skills)
+    goes into messages, NOT here. This keeps the system prompt tiny (~300 tok)
+    and cacheable.
+    """
+    global _static_cache, _static_hash, _cache_hits
+    static_raw = PROMPT_SECTIONS["identity"]
     static_h = _hash(static_raw)
     if static_h != _static_hash:
         _static_cache = static_raw
         _static_hash = static_h
-    sections.append(_static_cache)
+    else:
+        _cache_hits += 1
+    return _static_cache
 
-    # ── Layer B: Semi-static (rarely changes) ──
-    # tools description + skills catalog + MCP list + loaded skills
-    skills_text = ("Skills catalog:\n" + list_skills() +
-                   "\nUse load_skill(name) when a skill is relevant.")
-    mcp_names = list(mcp.mcp_clients.keys())
-    mcp_text = (f"Connected MCP servers: {', '.join(mcp_names)}"
-                if mcp_names else "")
-    loaded_skills = ""
+
+def build_context_reminder(context: dict) -> str:
+    """Build dynamic context block injected into messages (NOT system prompt).
+
+    All session-varying content goes here so the system prompt prefix stays
+    stable for caching. Based on Claude Code's <system-reminder> pattern.
+    """
+    parts = []
+
+    # Time
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    parts.append(f"<system-reminder>Current time: {current_time}")
+
+    # CC_MINE.md user preferences
+    try:
+        from config import load_cc_mine_md
+        cc_md = load_cc_mine_md()
+        if cc_md:
+            parts.append(f"<system-reminder>User preferences:\n{cc_md[:1500]}")
+    except (ImportError, AttributeError):
+        pass
+
+    # Skills catalog (semi-stable — changes only on skill install)
+    parts.append(f"<system-reminder>Skills: {list_skills()}")
     try:
         from skill_context import get_loaded_skills_context
-        loaded_skills = get_loaded_skills_context()
+        loaded = get_loaded_skills_context()
+        if loaded:
+            parts.append(f"<system-reminder>Active skills:\n{loaded[:800]}")
     except ImportError:
         pass
 
-    semi_raw = (skills_text + "\n\n" + mcp_text + "\n\n" + loaded_skills)
-    semi_h = _hash(semi_raw)
-    if semi_h != _semi_hash:
-        _semi_cache = semi_raw
-        _semi_hash = semi_h
-        _cache_misses += 1
-    else:
-        _cache_hits += 1
-    sections.append(_semi_cache)
+    # MCP servers
+    mcp_names = list(mcp.mcp_clients.keys())
+    if mcp_names:
+        parts.append(
+            f"<system-reminder>MCP servers: {', '.join(mcp_names)}")
 
-    # ── Layer C: Dynamic (changes every call) ──
-    current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sections.append(f"Current UTC/Local time: {current_time_str}")
-
+    # Memories
     if context.get("memories"):
-        sections.append(f"Relevant memories:\n{context['memories']}")
+        parts.append(f"<system-reminder>Memories:\n{context['memories'][:1500]}")
 
-    return "\n\n".join(sections)
+    return "\n\n".join(parts)
 def call_llm_structured(prompt: str, schema: dict, state: RecoveryState,
                         strict: bool = True) -> str:
     """Call LLM with JSON schema constraint, with graceful fallback."""
@@ -245,10 +252,18 @@ def call_llm_structured(prompt: str, schema: dict, state: RecoveryState,
 
 
 def call_llm(messages:list,context:dict,tools:list,state:RecoveryState,max_tokens:int):
-    #每次调用大模型需要组装新的提示词
+    # Tiny stable system prompt (identity only) — prefix-cache friendly
     system_prompt = assemble_system_prompt(context)
-    #openai结构需要把系统提示词放在首位，因此每次需要重新构造message
-    full_messages=[{"role": "system", "content": system_prompt}]+messages
+
+    # Dynamic context (time, CC_MINE.md, skills, MCP, memories) injected
+    # as a prefix user message, NOT in system prompt — Claude Code pattern.
+    # This keeps the system prompt stable for server-side prefix caching.
+    reminder = build_context_reminder(context)
+
+    full_messages = [{"role": "system", "content": system_prompt}]
+    if reminder:
+        full_messages.append({"role": "user", "content": reminder})
+    full_messages.extend(messages)
 
     global _session_tokens, _call_count
     est_tokens = estimate_tokens(full_messages)

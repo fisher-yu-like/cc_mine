@@ -218,7 +218,17 @@ def spawn_subagent(description: str) -> str:
             t_name = tool_call.function.name
             t_id = tool_call.id
             # OpenAI 下发的 arguments 是纯文本字符串，必须明文用 json.loads 解包
-            t_args = json.loads(tool_call.function.arguments)
+            try:
+                t_args = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError as e:
+                # Malformed JSON from LLM — log and skip this tool call
+                t_args = {}
+                output = f"JSON parse error: {e}"
+                messages.append({
+                    "role": "tool", "tool_call_id": t_id,
+                    "name": t_name, "content": output
+                })
+                continue
 
             # ⚙️ 核心拦截点：前置钩子（AOP 面向切面设计）
             # 可以在这里做安全审计，例如：如果是 bash 工具且包含 "rm -rf"，直接拒绝

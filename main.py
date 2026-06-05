@@ -214,7 +214,16 @@ def agent_loop(messages:list,context:dict):
             tool_name=tool_call.function.name
             tool_id=tool_call.id
             import json
-            tool_input= json.loads(tool_call.function.arguments)
+            try:
+                tool_input = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError as e:
+                tool_results_messages.append({
+                    "role": "tool", "tool_call_id": tool_call.id,
+                    "name": tool_call.function.name,
+                    "content": f"JSON parse error: {e}"
+                })
+                print(f"  \033[31m[json error] {tool_call.function.name}: {e}\033[0m")
+                continue
 
             # ── Plan mode: block write tools ──
             from planning import is_tool_allowed, get_state as plan_state

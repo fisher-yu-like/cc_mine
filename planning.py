@@ -55,7 +55,18 @@ def init_planning(workdir: Path):
         _plans_dir.mkdir(parents=True, exist_ok=True)
 
 
+_approved_turns: int = 0
+
+
 def get_state() -> str:
+    """Return current plan state. Auto-exits if agent stalls after approval."""
+    global _approved_turns
+    if _current_plan.state == PlanState.PLAN_APPROVED:
+        _approved_turns += 1
+        if _approved_turns >= 3:
+            # Agent hasn't called exit_plan_mode after 3 turns — force exit
+            exit_plan_mode("auto-exit after approval (agent stalled)")
+            return PlanState.IDLE
     return _current_plan.state
 
 
@@ -84,6 +95,8 @@ def enter_plan_mode(goal: str) -> str:
 
 
 # Tools that are READ-ONLY — allowed during planning
+# submit_plan and exit_plan_mode MUST be here so the agent can always
+# submit or abort plan mode (even during PLANNING state).
 _READ_ONLY_TOOLS = {
     "read_file", "glob", "grep",
     "web_search", "web_fetch",
@@ -91,6 +104,7 @@ _READ_ONLY_TOOLS = {
     "load_skill", "compact", "check_inbox",
     "list_crons", "search_memory", "structured_output",
     "connect_mcp", "list_mcp_servers", "workflow_status",
+    "submit_plan", "exit_plan_mode",
 }
 
 
@@ -244,7 +258,7 @@ def submit_plan(plan_text: str, steps: list[dict], details: str = "") -> str:
 def approve_plan() -> str:
     """Called by CLI /plan-approve. Re-reads the plan markdown file to capture
     any user edits, then injects approval into the conversation."""
-    global _current_plan
+    global _current_plan, _approved_turns
     if _current_plan.state != PlanState.PLAN_READY:
         return f"No plan awaiting approval (current state: {_current_plan.state})"
 
@@ -288,6 +302,7 @@ def approve_plan() -> str:
             json_path.write_text(json.dumps(_current_plan.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
 
     _current_plan.state = PlanState.PLAN_APPROVED
+    _approved_turns = 0  # reset counter — if agent doesn't exit within 3 turns, force it
     print(f"  \033[32m[plan] APPROVED — executing\033[0m")
     if changes_detected:
         print(f"  \033[32m[plan] User edits have been incorporated\033[0m")
@@ -336,8 +351,9 @@ def reject_plan(feedback: str = "") -> str:
 
 def exit_plan_mode(reason: str = "") -> str:
     """Exit planning mode, returning to normal operation."""
-    global _current_plan
+    global _current_plan, _approved_turns
     _current_plan.state = PlanState.IDLE
+    _approved_turns = 0
     msg = f"Planning mode exited. {reason}" if reason else "Planning mode exited."
     print(f"  \033[90m[plan] {msg}\033[0m\n")
     return msg

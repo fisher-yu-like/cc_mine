@@ -303,7 +303,9 @@ def approve_plan() -> str:
         "[Plan Approved]\n"
         "Your plan has been approved by the user. "
         + ("The plan file has been updated with the user's edits. " if changes_detected else "")
-        + "Call exit_plan_mode to leave planning mode, then begin executing the steps."
+        + "You MUST call exit_plan_mode NOW to leave planning mode. "
+        + "This is REQUIRED before you can use write tools. Do NOT call any other tool first — "
+        + "call exit_plan_mode immediately, then begin executing the steps."
         + step_hint
     )
 

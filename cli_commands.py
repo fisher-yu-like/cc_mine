@@ -639,6 +639,21 @@ def cmd_plan_reject(args: str) -> CmdResult:
         return "(planning system unavailable)", False
 
 
+@register("plan-exit", "Force exit plan mode (if agent is stuck)")
+def cmd_plan_exit(args: str) -> CmdResult:
+    try:
+        from planning import exit_plan_mode, get_state as plan_state
+        ps = plan_state()
+        if ps == "idle":
+            return "Not in plan mode.", False
+        msg = exit_plan_mode("user forced exit via /plan-exit")
+        hist = _h()
+        hist.append({"role": "user", "content": msg})
+        return "\033[32mPlan mode exited. You can now continue normally.\033[0m", False
+    except ImportError:
+        return "(planning system unavailable)", False
+
+
 @register("config", "Show current configuration")
 def cmd_config(args: str) -> CmdResult:
     try:

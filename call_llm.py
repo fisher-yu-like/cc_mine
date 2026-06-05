@@ -255,15 +255,26 @@ def call_llm(messages:list,context:dict,tools:list,state:RecoveryState,max_token
     # Tiny stable system prompt (identity only) — prefix-cache friendly
     system_prompt = assemble_system_prompt(context)
 
-    # Dynamic context (time, CC_MINE.md, skills, MCP, memories) injected
-    # as a prefix user message, NOT in system prompt — Claude Code pattern.
-    # This keeps the system prompt stable for server-side prefix caching.
+    # Dynamic context injected into the LAST user message, NOT as a prefix.
+    # DeepSeek prefix cache: [system + conversation] is stable; only the
+    # final user message (with appended reminder) varies. This maximizes
+    # the cached prefix length — every conversation turn hits cache.
     reminder = build_context_reminder(context)
-
     full_messages = [{"role": "system", "content": system_prompt}]
-    if reminder:
-        full_messages.append({"role": "user", "content": reminder})
-    full_messages.extend(messages)
+
+    if reminder and messages:
+        # Inject reminder into the last user message to preserve prefix
+        msg_list = [dict(m) for m in messages]  # shallow copy
+        for i in range(len(msg_list) - 1, -1, -1):
+            if msg_list[i].get("role") == "user":
+                old = msg_list[i].get("content", "")
+                msg_list[i]["content"] = reminder + "\n\n" + (old or "")
+                break
+        else:
+            msg_list.insert(0, {"role": "user", "content": reminder})
+        full_messages.extend(msg_list)
+    else:
+        full_messages.extend(messages)
 
     global _session_tokens, _call_count
     est_tokens = estimate_tokens(full_messages)

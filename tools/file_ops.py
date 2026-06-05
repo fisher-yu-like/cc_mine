@@ -1,7 +1,20 @@
+import threading
 from pathlib import Path
 
 from config import WORKDIR
-import subprocess
+
+# ── File-level write locks — prevents concurrent subagent edit conflicts ──
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _get_file_lock(path: Path) -> threading.Lock:
+    """Get or create a per-file lock keyed by resolved path."""
+    key = str(path.resolve())
+    with _locks_guard:
+        if key not in _locks:
+            _locks[key] = threading.Lock()
+        return _locks[key]
 
 
 def _read_file_safe(path: Path) -> str:
@@ -44,7 +57,9 @@ def run_write(path: str, content: str, cwd: Path = None) -> str:
     try:
         fp = safe_path(path, cwd)
         fp.parent.mkdir(parents=True, exist_ok=True)
-        fp.write_text(content, encoding="utf-8")
+        lock = _get_file_lock(fp)
+        with lock:
+            fp.write_text(content, encoding="utf-8")
         return f"Wrote {len(content)} bytes to {path}"
     except Exception as e:
         return f"Error: {e}"
@@ -140,18 +155,23 @@ def run_edit(path: str, old_text: str, new_text: str,
     """
     try:
         fp = safe_path(path, cwd)
-        text = _read_file_safe(fp)
+        lock = _get_file_lock(fp)
 
-        if old_text not in text:
-            return f"Error: text not found in {path}"
+        # Lock entire read-modify-write cycle — prevents concurrent
+        # subagents from editing the same file and silently losing changes.
+        with lock:
+            text = _read_file_safe(fp)
 
-        # Build diff and snippet BEFORE editing
-        diff_text = _render_diff(old_text, new_text, path)
-        snippet = _build_snippet(text, old_text, new_text)
+            if old_text not in text:
+                return f"Error: text not found in {path}"
 
-        # Apply the edit
-        new_content = text.replace(old_text, new_text, 1)
-        fp.write_text(new_content, encoding="utf-8")
+            # Build diff and snippet BEFORE editing
+            diff_text = _render_diff(old_text, new_text, path)
+            snippet = _build_snippet(text, old_text, new_text)
+
+            # Apply the edit
+            new_content = text.replace(old_text, new_text, 1)
+            fp.write_text(new_content, encoding="utf-8")
 
         # Assemble result — diff first, then snippet context
         separator = "─" * 60

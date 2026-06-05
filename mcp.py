@@ -71,15 +71,66 @@ def normalize_mcp_name(name: str) -> str:
 # ═══════════════════════════════════════════════════════════
 
 # Configuration for real MCP servers.
-# Format: "name" -> list[str] (the command + args to spawn the server)
+#
+# Format options:
+#   1. Simple: "name" -> list[str]  (command + args)
+#      Example: "fetch": ["uvx", "mcp-server-fetch"]
+#
+#   2. Extended: "name" -> dict with command, args, env
+#      Example: "github": {"command": "npx", "args": ["-y", "..."], "env": {"TOKEN": "xxx"}}
+#
+# Environment variables set here are merged into the subprocess environment.
+# Leave values as empty strings to inherit from the parent shell environment.
 # Add or remove entries here. The agent discovers tools automatically.
-MCP_CONFIG: dict[str, list[str]] = {
+MCP_CONFIG: dict[str, list[str] | dict] = {
     "fetch":  ["uvx", "mcp-server-fetch"],
-    "github": ["npx", "-y", "@modelcontextprotocol/server-github"],
+
+    # GitHub MCP — manage repos, issues, PRs, workflows
+    # Requires: GITHUB_PERSONAL_ACCESS_TOKEN (classic PAT with repo/user/read:user scopes)
+    # Generate token at: https://github.com/settings/tokens
+    # Alternative: use @noushad999/github-mcp-server or the official github/github-mcp-server (Docker)
+    "github": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"],
+        "env": {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "",  # Set your GitHub PAT here or export in shell
+        },
+    },
+
+    # Feishu (飞书) MCP — manage documents, Bitable, Wiki, tasks, calendar, contacts
+    # Requires: Feishu app credentials from Feishu Open Platform
+    # Create app and get credentials: https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes/create-an-app
+    # Package: https://github.com/cso1z/Feishu-MCP
+    "feishu": {
+        "command": "npx",
+        "args": ["-y", "feishu-mcp@latest", "--stdio"],
+        "env": {
+            "FEISHU_APP_ID": "",          # 飞书应用 ID (形如 cli_xxxxxxxx)
+            "FEISHU_APP_SECRET": "",      # 飞书应用密钥
+            "FEISHU_AUTH_TYPE": "tenant", # tenant=应用级权限, user=用户级权限(需OAuth)
+            "FEISHU_ENABLED_MODULES": "document,task,calendar,member",  # 启用模块
+        },
+    },
 }
 
 # Store active subprocesses for cleanup
 _real_procs: dict[str, subprocess.Popen] = {}
+
+
+def _normalize_mcp_entry(entry: list[str] | dict) -> tuple[list[str], dict[str, str]]:
+    """Normalize MCP config entry to (command_list, env_dict).
+
+    Supports both legacy list format and new dict format.
+    Dict format: {"command": "npx", "args": ["-y", "pkg"], "env": {"KEY": "val"}}
+    """
+    if isinstance(entry, list):
+        return list(entry), {}
+    if isinstance(entry, dict):
+        cmd = [entry.get("command", "")]
+        cmd.extend(entry.get("args", []))
+        env = dict(entry.get("env", {}))
+        return cmd, env
+    raise TypeError(f"Invalid MCP config entry type: {type(entry).__name__}")
 
 
 def _send_mcp_request(proc: subprocess.Popen, method: str,
@@ -133,16 +184,32 @@ def _make_real_mcp_handler(proc: subprocess.Popen, tool_name: str):
     return handler
 
 
-def _connect_real_mcp_stdio(command: list[str], name: str) -> tuple[str, MCPClient | None]:
+def _connect_real_mcp_stdio(command: list[str], name: str,
+                           extra_env: dict[str, str] | None = None) -> tuple[str, MCPClient | None]:
     """Spawn a real MCP server process, handshake, discover tools.
+    Args:
+        command: The command + args list to spawn.
+        name: Human-readable server name.
+        extra_env: Additional env vars to merge into the subprocess env.
     Returns (message, client_or_None)."""
-    # On Windows, try .cmd suffix if bare command fails
+    import os as _os
     import platform
+
+    # ── Build subprocess environment ──
+    subprocess_env = _os.environ.copy()
+    if extra_env:
+        for k, v in extra_env.items():
+            if v:  # Non-empty: set/override
+                subprocess_env[k] = v
+            # Empty value: let parent env prevail (already in os.environ.copy())
+
+    # On Windows, try .cmd suffix if bare command fails
     cmd = list(command)
     try:
         proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, bufsize=1,
+            env=subprocess_env,
         )
     except FileNotFoundError:
         if platform.system() == "Windows" and not cmd[0].endswith(".cmd"):
@@ -151,6 +218,7 @@ def _connect_real_mcp_stdio(command: list[str], name: str) -> tuple[str, MCPClie
                 proc = subprocess.Popen(
                     cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, text=True, bufsize=1,
+                    env=subprocess_env,
                 )
             except FileNotFoundError as e:
                 return f"Error: MCP command not found — {e}", None
@@ -274,9 +342,17 @@ def connect_mcp(name: str) -> str:
 
     # ── Try real MCP first ──
     if name in MCP_CONFIG:
-        command = MCP_CONFIG[name]
+        entry = MCP_CONFIG[name]
+        command, env_vars = _normalize_mcp_entry(entry)
         print(f"  \033[31m[mcp] starting real server: {' '.join(command)}\033[0m")
-        msg, client = _connect_real_mcp_stdio(command, name)
+        if env_vars:
+            non_empty = {k: v for k, v in env_vars.items() if v}
+            inherited = {k for k, v in env_vars.items() if not v}
+            if non_empty:
+                print(f"  \033[31m[mcp] env vars set: {', '.join(non_empty.keys())}\033[0m")
+            if inherited:
+                print(f"  \033[31m[mcp] env vars (from shell): {', '.join(inherited)}\033[0m")
+        msg, client = _connect_real_mcp_stdio(command, name, extra_env=env_vars)
         if client is not None:
             mcp_clients[name] = client
             tool_names = [t.get("name", "?") for t in client.tools]
@@ -321,7 +397,12 @@ def list_mcp_servers() -> str:
         lines.append("\nAvailable real servers (not connected):")
         for name in MCP_CONFIG:
             if name not in mcp_clients:
-                lines.append(f"  {name}: {' '.join(MCP_CONFIG[name])}")
+                entry = MCP_CONFIG[name]
+                if isinstance(entry, list):
+                    lines.append(f"  {name}: {' '.join(entry)}")
+                else:
+                    cmd = " ".join([entry.get("command", "")] + entry.get("args", []))
+                    lines.append(f"  {name}: {cmd}")
     if MOCK_SERVERS:
         lines.append(f"\nAvailable mock servers: {', '.join(MOCK_SERVERS)}")
     return "\n".join(lines)

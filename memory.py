@@ -67,41 +67,52 @@ def update_context(context: dict, messages: list) -> dict:
 # ── Structured memory CRUD ──
 
 
-def _is_duplicate(content: str, target_dir, threshold: float = 0.6) -> bool:
-    """Check if very similar memory content already exists.
+def _find_duplicate(content: str, search_dirs: list[Path],
+                    threshold: float = 0.5) -> Path | None:
+    """Find a similar memory file across directories. Returns path or None.
 
     Uses Jaccard similarity on word sets (body only, ignoring frontmatter).
-    Returns True if a near-duplicate is found.
+    Lower threshold (0.5) for cross-directory matching — user preferences
+    expressed differently may mean the same thing.
     """
     new_words = set(content.lower().split())
     if not new_words:
-        return False
+        return None
     from skill_load import _parse_frontmatter
-    for mf in sorted(target_dir.glob("*.md")):
-        try:
-            raw = mf.read_text(encoding="utf-8", errors="replace")
-        except Exception:
+    for search_dir in search_dirs:
+        if not search_dir.exists():
             continue
-        _, body = _parse_frontmatter(raw)
-        existing_words = set(body.lower().split())
-        if not existing_words:
-            continue
-        overlap = len(new_words & existing_words)
-        union = len(new_words | existing_words)
-        if union > 0 and overlap / union > threshold:
-            return True
-    return False
+        for mf in sorted(search_dir.glob("*.md"),
+                         key=lambda p: p.stat().st_mtime, reverse=True):
+            if mf.name == "MEMORY.md":
+                continue
+            try:
+                raw = mf.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            _, body = _parse_frontmatter(raw)
+            existing_words = set(body.lower().split())
+            if not existing_words:
+                continue
+            overlap = len(new_words & existing_words)
+            union = len(new_words | existing_words)
+            if union > 0 and overlap / union > threshold:
+                return mf
+    return None
 
 
 def add_memory(title: str, content: str, tags: str = "",
                source: str = "agent") -> str:
-    """Create a memory card. source='user' stores permanently;
+    """Create or update a memory card. source='user' stores permanently;
     source='agent' stores transient decision notes.
 
+    If similar content exists (same or different directory), the OLD memory
+    is UPDATED in place with the new content — "latest wins" semantics.
+    Cross-directory check: user preferences can override stale agent notes.
+
     DO NOT memorize code structure or file contents that can be re-read.
-    Only store user habits, preferences, and non-derivable decisions.
     """
-    # Pick target directory based on source
+    # Pick target directory
     if source == "user":
         target_dir = USER_MEMORY_DIR
     elif source == "shared":
@@ -112,16 +123,36 @@ def add_memory(title: str, content: str, tags: str = "",
     if not target_dir.exists():
         target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Dedup: skip if very similar content already exists
-    if _is_duplicate(content, target_dir):
-        return (f"Memory skipped: similar content already exists "
-                f"(use /memory-add to force)")
+    # Cross-directory duplicate search: check all dirs, not just target
+    ALL_DIRS = [d for d in (USER_MEMORY_DIR, AGENT_MEMORY_DIR,
+                             SHARED_MEMORY_DIR, MEMORY_DIR)
+                if d.exists()]
 
     import re
     slug = re.sub(r'[^a-z0-9_-]', '-', title.lower())[:40]
-    path = target_dir / f"{slug}.md"
     ts = time.strftime("%Y-%m-%dT%H:%M:%S")
     tags_yaml = f"[{', '.join(t.strip() for t in tags.split(',') if t.strip())}]" if tags else "[]"
+
+    existing = _find_duplicate(content, ALL_DIRS)
+    if existing:
+        # UPDATE: overwrite old memory with new content + timestamp
+        existing.write_text(
+            f"---\n"
+            f"title: \"{title}\"\n"
+            f"tags: {tags_yaml}\n"
+            f"source: {source}\n"
+            f"created: {ts}\n"
+            f"updated: {ts}\n"
+            f"---\n"
+            f"\n{content}\n",
+            encoding="utf-8"
+        )
+        print(f"  \033[33m[memory] ~{existing.stem} (updated, was similar)\033[0m")
+        return (f"Memory '{title}' updated (overwrote similar: "
+                f"{existing.stem}) [{source}]")
+
+    # New memory
+    path = target_dir / f"{slug}.md"
     body = (
         f"---\n"
         f"title: \"{title}\"\n"

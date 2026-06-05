@@ -73,6 +73,18 @@ DESTRUCTIVE = [
     "eval ",
 ]
 
+# Chain patterns: attack via && / ; / || / $(...) / ``  instead of |
+CHAIN_PATTERNS = [
+    "&&", ";", "||", "$(", "`",
+    "base64 -d", "base64 --decode",
+]
+
+# Write-then-execute: two-stage attack via write_file + bash
+_SCRIPT_INDICATORS = [
+    "#!/bin/bash", "#!/bin/sh", "#!/usr/bin/env",
+    "subprocess", "os.system", "exec(", "__import__",
+]
+
 _PERMISSIONS_CACHE = None
 _PERMISSIONS_MTIME = 0
 
@@ -87,21 +99,30 @@ def _reset_tool_counts():
 
 
 def _load_permissions() -> list[dict]:
-    """Load permission rules from WORKDIR/.cc_mine/permissions.json (with hot-reload)."""
+    """Load permission rules from WORKDIR/.cc_mine/permissions.json (with hot-reload).
+
+    Read-then-validate: re-read mtime AFTER parsing to detect TOCTOU races.
+    If mtime changed during read, the file may have been swapped — discard.
+    """
     global _PERMISSIONS_CACHE, _PERMISSIONS_MTIME
     path = WORKDIR / ".cc_mine" / "permissions.json"
     if not path.exists():
         return []
-    mtime = path.stat().st_mtime
-    if _PERMISSIONS_CACHE is not None and mtime == _PERMISSIONS_MTIME:
+    mtime_before = path.stat().st_mtime
+    if _PERMISSIONS_CACHE is not None and mtime_before == _PERMISSIONS_MTIME:
         return _PERMISSIONS_CACHE
     try:
-        rules = _json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_text(encoding="utf-8")
+        rules = _json.loads(raw)
+        # TOCTOU guard: re-check mtime after read
+        mtime_after = path.stat().st_mtime
+        if mtime_before != mtime_after:
+            return _PERMISSIONS_CACHE or []  # file changed during read, use old
         _PERMISSIONS_CACHE = rules
-        _PERMISSIONS_MTIME = mtime
+        _PERMISSIONS_MTIME = mtime_before
         return rules
     except Exception:
-        return []
+        return _PERMISSIONS_CACHE or []
 
 
 def _match_rule(rules: list[dict], tool: str, operand: str) -> str | None:
@@ -146,6 +167,19 @@ def permission_hook(block):
             if choice not in ("y", "yes"):
                 return "Permission denied by user"
 
+        # 2c. Chained execution via && / ; / || / $() — catches bypass attempts
+        has_chain = any(p in cmd for p in CHAIN_PATTERNS)
+        has_bash_exec = any(p in cmd for p in
+                           ["bash ", "sh ", "/bin/bash", "/bin/sh",
+                            "python -c", "python3 -c", "perl -e",
+                            "ruby -e", "node -e"])
+        if has_chain and has_bash_exec:
+            print(f"\n\033[33m[permission] chained execution detected\033[0m")
+            print(f"  {cmd}")
+            choice = input("  Allow? [y/N] ").strip().lower()
+            if choice not in ("y", "yes"):
+                return "Permission denied: chained execution blocked"
+
     # 2b. Bash rate limiter — prevent runaway tool call loops
     if b.name == "bash":
         _TOOL_COUNTS["bash"] = _TOOL_COUNTS.get("bash", 0) + 1
@@ -161,7 +195,20 @@ def permission_hook(block):
         except Exception:
             return f"Permission denied: path escapes workspace: {path}"
 
-        # 3b. Sensitive file path check — block writing to protected paths
+        # 3b. Two-stage attack: writing scripts to temp locations
+        content = b.input.get("content", "")
+        script_indicators = any(ind in content for ind in _SCRIPT_INDICATORS)
+        suspicious_path = any(d in path.lower()
+                             for d in ["/tmp/", "\\temp\\", "/var/tmp/",
+                                        ".sh", ".bash", ".py"])
+        if script_indicators and suspicious_path:
+            print(f"\n\033[33m[permission] script file write to temp path\033[0m")
+            print(f"  {path}")
+            choice = input("  Allow? [y/N] ").strip().lower()
+            if choice not in ("y", "yes"):
+                return "Permission denied: suspicious script write blocked"
+
+        # 3c. Sensitive file path check — block writing to protected paths
         SENSITIVE_PATTERNS = [
             ".env", ".env.", "credentials", "secrets", "secret",
             ".ssh/", "id_rsa", "id_ed25519", "id_ecdsa",

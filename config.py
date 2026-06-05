@@ -28,40 +28,25 @@ WORKDIR: Path = _resolve_workdir()
 
 
 # ═══════════════════════════════════════════════════════════════
-# 子目录路径
+# 子目录路径 — 全部收到 .cc_mine/ 下，不污染工作目录
 # ═══════════════════════════════════════════════════════════════
 
-SKILLS_DIR: Path = WORKDIR / "skills"
-TRANSCRIPT_DIR: Path = WORKDIR / ".transcripts"
-TOOL_RESULTS_DIR: Path = WORKDIR / ".task_outputs" / "tool-results"
-TASKS_DIR: Path = WORKDIR / ".tasks"
-MAILBOX_DIR: Path = WORKDIR / ".mailboxes"
-WORKTREES_DIR: Path = WORKDIR / ".worktrees"
-PLANS_DIR: Path = WORKDIR / ".cc_mine" / "plans"
-SESSIONS_DIR: Path = WORKDIR / ".cc_mine" / "sessions"
-LOGS_DIR: Path = WORKDIR / ".cc_mine" / "logs"
-TASK_OUTPUTS_DIR: Path = WORKDIR / ".task_outputs"
-DURABLE_PATH: Path = WORKDIR / ".scheduled_tasks.json"
-CC_MINE_MD_PATH: Path = WORKDIR / "CC_MINE.md"
+_CC_MINE_DIR: Path = WORKDIR / ".cc_mine"
 
+SKILLS_DIR: Path = _CC_MINE_DIR / "skills"
+TRANSCRIPT_DIR: Path = _CC_MINE_DIR / "transcripts"
+TOOL_RESULTS_DIR: Path = _CC_MINE_DIR / "task_outputs" / "tool-results"
+TASKS_DIR: Path = _CC_MINE_DIR / "tasks"
+MAILBOX_DIR: Path = _CC_MINE_DIR / "mailboxes"
+WORKTREES_DIR: Path = _CC_MINE_DIR / "worktrees"
+PLANS_DIR: Path = _CC_MINE_DIR / "plans"
+SESSIONS_DIR: Path = _CC_MINE_DIR / "sessions"
+LOGS_DIR: Path = _CC_MINE_DIR / "logs"
+TASK_OUTPUTS_DIR: Path = _CC_MINE_DIR / "task_outputs"
+MEMORY_DIR: Path = _CC_MINE_DIR / "memory"
+DURABLE_PATH: Path = _CC_MINE_DIR / "scheduled_tasks.json"
+CC_MINE_MD_PATH: Path = WORKDIR / "CC_MINE.md"  # 用户配置文件，保留在根目录
 
-# ═══════════════════════════════════════════════════════════════
-# 记忆目录（支持 worktree 共享）
-# ═══════════════════════════════════════════════════════════════
-
-def _resolve_memory_dir() -> Path:
-    """如果在 worktree 中运行，使用父项目的 .memory/ 共享记忆。"""
-    wd = WORKDIR
-    if ".worktrees" in str(wd):
-        parent = wd
-        while parent.name != ".worktrees" and parent.parent != parent:
-            parent = parent.parent
-        if parent.name == ".worktrees":
-            return parent.parent / ".memory"
-    return wd / ".memory"
-
-
-MEMORY_DIR: Path = _resolve_memory_dir()
 MEMORY_INDEX: Path = MEMORY_DIR / "MEMORY.md"
 USER_MEMORY_DIR: Path = MEMORY_DIR / "user"
 AGENT_MEMORY_DIR: Path = MEMORY_DIR / "agent"

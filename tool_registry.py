@@ -1,8 +1,9 @@
 """
 Tool registry: contains BUILTIN_TOOLS (pure data) and call_tool_handler (simple dispatch).
-Extracted from executor.py to break circular imports.
 
-This module has ZERO project-level imports — it is safe to import from anywhere.
+Layer 1 (Atomic): ~18 core tools — high-frequency, orthogonal, irreplaceable.
+Layer 2 (Sandbox): everything else via `bash` — git, cron, worktree, etc.
+Layer 3 (Code):   `python` tool — execute multi-step logic in ONE call.
 """
 
 
@@ -17,16 +18,17 @@ def call_tool_handler(handler, args: dict, name: str) -> str:
 
 
 BUILTIN_TOOLS = [
+    # ── File Operations ──
     {
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Run a shell command.",
+            "description": "Run a shell command. This is the primary tool for git, testing, file ops, package management, and any CLI program. Prefer combining multiple commands with && or ; to reduce roundtrips.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string"},
-                    "run_in_background": {"type": "boolean"}
+                    "command": {"type": "string", "description": "Shell command to execute"},
+                    "run_in_background": {"type": "boolean", "description": "Run in background for long tasks"}
                 },
                 "required": ["command"]
             }
@@ -36,7 +38,7 @@ BUILTIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read file contents.",
+            "description": "Read file contents with optional offset and line limit.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -52,7 +54,7 @@ BUILTIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Write content to a file.",
+            "description": "Write (create or overwrite) content to a file.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -67,7 +69,7 @@ BUILTIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Replace exact text in a file once.",
+            "description": "Replace exact text in a file once. Prefer this over write_file for small changes — it shows a diff.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -79,20 +81,17 @@ BUILTIN_TOOLS = [
             }
         }
     },
+    # ── Search ──
     {
         "type": "function",
         "function": {
-            "name": "grep",
-            "description": "Search file contents with a regex pattern. Returns file:line:content matches.",
+            "name": "glob",
+            "description": "Find files matching a glob pattern (e.g. '**/*.py', 'src/**/*.ts').",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pattern": {"type": "string", "description": "Regex pattern to search for"},
-                    "path": {"type": "string", "description": "File or directory to search (default: '.')"},
-                    "glob": {"type": "string", "description": "Glob filter for files (e.g. '*.py')"},
-                    "ignore_case": {"type": "boolean"},
-                    "max_results": {"type": "integer"},
-                    "context": {"type": "integer", "description": "Lines of context around each match"}
+                    "pattern": {"type": "string"},
+                    "path": {"type": "string", "description": "Directory to search (default: cwd)"}
                 },
                 "required": ["pattern"]
             }
@@ -101,382 +100,31 @@ BUILTIN_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "glob",
-            "description": "Find files matching a glob pattern. Use 'pattern' (or 'path' as alias).",
+            "name": "grep",
+            "description": "Search file contents with a regex pattern. Returns file:line:content matches.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pattern": {"type": "string"},
-                    "path": {"type": "string"}
+                    "pattern": {"type": "string", "description": "Regex pattern"},
+                    "path": {"type": "string", "description": "File/directory to search"},
+                    "glob": {"type": "string", "description": "Glob filter (e.g. '*.py')"},
+                    "ignore_case": {"type": "boolean"},
+                    "max_results": {"type": "integer"}
                 },
-                "required": []
+                "required": ["pattern"]
             }
         }
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "todo_write",
-            "description": "Create and manage a task list for the current session.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "todos": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "content": {"type": "string"},
-                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}
-                            },
-                            "required": ["content", "status"]
-                        }
-                    }
-                },
-                "required": ["todos"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "task",
-            "description": "Spawn a ONE-SHOT worker subagent. Returns a text summary (sync) or a subagent_id (async). Set run_in_background=true when you want to spawn multiple subagents in parallel — their results arrive as notifications.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "description": {"type": "string"},
-                    "run_in_background": {"type": "boolean"}
-                },
-                "required": ["description"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "load_skill",
-            "description": "Load the full content of a skill by name.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"}
-                },
-                "required": ["name"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "compact",
-            "description": "Summarize earlier conversation and continue with compacted context.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "focus": {"type": "string"}
-                },
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_task",
-            "description": "Create a task.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "subject": {"type": "string"},
-                    "description": {"type": "string"},
-                    "blockedBy": {
-                        "type": "array",
-                        "items": {"type": "string"}
-                    }
-                },
-                "required": ["subject"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_tasks",
-            "description": "List all tasks.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_task",
-            "description": "Get full task details.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {"type": "string"}
-                },
-                "required": ["task_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "claim_task",
-            "description": "Claim a pending task.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {"type": "string"}
-                },
-                "required": ["task_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "complete_task",
-            "description": "Complete an in-progress task.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {"type": "string"}
-                },
-                "required": ["task_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "schedule_cron",
-            "description": "Schedule a cron job. cron is 5-field: min hour dom month dow. For one-shot reminders, compute the target minute and set recurring=false.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "cron": {"type": "string"},
-                    "prompt": {"type": "string"},
-                    "recurring": {"type": "boolean"},
-                    "durable": {"type": "boolean"}
-                },
-                "required": ["cron", "prompt"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_crons",
-            "description": "List registered cron jobs.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "cancel_cron",
-            "description": "Cancel a cron job by ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "job_id": {"type": "string"}
-                },
-                "required": ["job_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "spawn_teammate",
-            "description": "Spawn a PERSISTENT background agent that runs until shutdown. Use for: parallel workers, ongoing roles (reviewer/tester), autonomous task-board workers. For one-shot jobs use task instead.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "role": {"type": "string"},
-                    "prompt": {"type": "string"}
-                },
-                "required": ["name", "role", "prompt"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "send_message",
-            "description": "Send message to a teammate.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "to": {"type": "string"},
-                    "content": {"type": "string"}
-                },
-                "required": ["to", "content"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_inbox",
-            "description": "Check inbox for messages and protocol responses.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "request_shutdown",
-            "description": "Request a teammate to shut down.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "teammate": {"type": "string"}
-                },
-                "required": ["teammate"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "request_plan",
-            "description": "Ask a teammate to submit a plan.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "teammate": {"type": "string"},
-                    "task": {"type": "string"}
-                },
-                "required": ["teammate", "task"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "review_plan",
-            "description": "Approve or reject a submitted plan.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "request_id": {"type": "string"},
-                    "approve": {"type": "boolean"},
-                    "feedback": {"type": "string"}
-                },
-                "required": ["request_id", "approve"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_worktree",
-            "description": "Create an isolated git worktree.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "task_id": {"type": "string"}
-                },
-                "required": ["name"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "remove_worktree",
-            "description": "Remove a worktree. Refuses if changes exist.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "discard_changes": {"type": "boolean"}
-                },
-                "required": ["name"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "keep_worktree",
-            "description": "Keep a worktree for manual review.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"}
-                },
-                "required": ["name"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "connect_mcp",
-            "description": "Connect to an MCP server and discover its tools. Connected tools appear as mcp__<server>__<tool>. Available: docs, deploy (mock); configure real servers in mcp.py MCP_CONFIG.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"}
-                },
-                "required": ["name"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "disconnect_mcp",
-            "description": "Disconnect from an MCP server and clean up its subprocess.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"}
-                },
-                "required": ["name"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_mcp_servers",
-            "description": "List connected and available MCP servers.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    },
+    # ── Web ──
     {
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web and return top results with titles, URLs, and snippets.",
+            "description": "Search the web. Returns titles, URLs, snippets.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search query"},
+                    "query": {"type": "string"},
                     "allowed_domains": {"type": "array", "items": {"type": "string"}},
                     "blocked_domains": {"type": "array", "items": {"type": "string"}}
                 },
@@ -492,99 +140,69 @@ BUILTIN_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "url": {"type": "string", "description": "URL to fetch"},
-                    "prompt": {"type": "string", "description": "Optional context/prompt for the fetched content"}
+                    "url": {"type": "string"},
+                    "prompt": {"type": "string", "description": "Optional: what to extract from the page"}
                 },
                 "required": ["url"]
             }
         }
     },
+    # ── Delegation ──
     {
         "type": "function",
         "function": {
-            "name": "begin_workflow",
-            "description": "Create a new workflow DAG for orchestrating parallel subagent tasks.",
+            "name": "task",
+            "description": "Spawn a ONE-SHOT worker subagent to execute a specific job. The subagent has: bash, read_file, write_file, edit_file, glob. It returns a text summary. Set run_in_background=true for parallel subagents.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string"},
-                    "description": {"type": "string"}
+                    "description": {"type": "string", "description": "What the subagent should do"},
+                    "run_in_background": {"type": "boolean", "description": "Run async (for parallel subagents)"}
                 },
-                "required": ["name"]
+                "required": ["description"]
             }
         }
     },
+    # ── Task Board ──
     {
         "type": "function",
         "function": {
-            "name": "add_workflow_node",
-            "description": "Add a node to a workflow. Set depends_on for sequential/phase patterns.",
+            "name": "create_task",
+            "description": "Create a persistent task card on the task board. Use for tracking work across multiple turns.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "workflow_id": {"type": "string"},
-                    "node_id": {"type": "string"},
-                    "description": {"type": "string"},
-                    "depends_on": {"type": "array", "items": {"type": "string"}}
+                    "subject": {"type": "string", "description": "Short task title"},
+                    "description": {"type": "string", "description": "Detailed description"},
+                    "blockedBy": {"type": "array", "items": {"type": "string"}, "description": "Task IDs this depends on"}
                 },
-                "required": ["workflow_id", "node_id", "description"]
+                "required": ["subject"]
             }
         }
     },
+    # ── Planning & Progress ──
     {
         "type": "function",
         "function": {
-            "name": "seal_workflow",
-            "description": "Lock a workflow — no more nodes can be added.",
+            "name": "todo_write",
+            "description": "Create and update a task list for the current session. Use ONE item in_progress at a time.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "workflow_id": {"type": "string"}
+                    "todos": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "content": {"type": "string"},
+                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
+                                "activeForm": {"type": "string"}
+                            },
+                            "required": ["content", "status"]
+                        }
+                    }
                 },
-                "required": ["workflow_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "execute_workflow",
-            "description": "Execute a sealed workflow with up to max_parallel concurrent nodes.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "workflow_id": {"type": "string"},
-                    "max_parallel": {"type": "integer"}
-                },
-                "required": ["workflow_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "workflow_status",
-            "description": "Get status of a workflow including all nodes.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "workflow_id": {"type": "string"}
-                },
-                "required": ["workflow_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "cancel_workflow",
-            "description": "Cancel a running workflow.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "workflow_id": {"type": "string"}
-                },
-                "required": ["workflow_id"]
+                "required": ["todos"]
             }
         }
     },
@@ -592,11 +210,11 @@ BUILTIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "enter_plan_mode",
-            "description": "Enter READ-ONLY planning mode. Explore code, research, design — write tools blocked until plan approved.",
+            "description": "Enter READ-ONLY planning mode for complex tasks. Explore code, design, then submit_plan for user approval.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "goal": {"type": "string", "description": "What the plan aims to accomplish"}
+                    "goal": {"type": "string", "description": "What to plan for"}
                 },
                 "required": ["goal"]
             }
@@ -606,13 +224,13 @@ BUILTIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "submit_plan",
-            "description": "Submit your plan for user approval. Writes a markdown plan file that the user can open in their IDE, review, and edit. When the user approves via /plan-approve, the file is re-read to capture any modifications. Include a detailed implementation plan in the 'details' field.",
+            "description": "Submit your plan as a markdown file for user review/editing.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "plan_text": {"type": "string", "description": "Summary of the plan / goal (1-2 sentences)"},
-                    "steps": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}}}, "description": "Numbered implementation steps"},
-                    "details": {"type": "string", "description": "Optional: detailed implementation notes — approach, files to modify, risks, trade-offs. Rendered as markdown in the plan file."}
+                    "plan_text": {"type": "string", "description": "Plan summary"},
+                    "steps": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}}}},
+                    "details": {"type": "string", "description": "Optional implementation details"}
                 },
                 "required": ["plan_text", "steps"]
             }
@@ -625,71 +243,36 @@ BUILTIN_TOOLS = [
             "description": "Exit planning mode and return to normal operation.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "reason": {"type": "string"}
-                },
+                "properties": {"reason": {"type": "string"}},
                 "required": []
             }
         }
     },
+    # ── Context Management ──
     {
         "type": "function",
         "function": {
-            "name": "update_plan_step",
-            "description": "Update a plan step's status during execution.",
+            "name": "compact",
+            "description": "Summarize earlier conversation to free context space.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "step_index": {"type": "integer"},
-                    "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "skipped"]}
-                },
-                "required": ["step_index", "status"]
+                "properties": {"focus": {"type": "string"}},
+                "required": []
             }
         }
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "install_skill",
-            "description": "Install a skill from a URL into the skills directory. Supports GitHub repos, .md files, and .zip archives.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "URL to download skill from"},
-                    "name": {"type": "string", "description": "Name for the installed skill (optional)"}
-                },
-                "required": ["url"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "structured_output",
-            "description": "Generate a JSON response matching a schema. Use when you need structured data output.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "prompt": {"type": "string", "description": "Task description"},
-                    "schema": {"type": "object", "description": "JSON Schema for the output"},
-                    "strict": {"type": "boolean", "description": "Enforce strict schema compliance"}
-                },
-                "required": ["prompt", "schema"]
-            }
-        }
-    },
+    # ── Memory ──
     {
         "type": "function",
         "function": {
             "name": "add_memory",
-            "description": "Save a fact to persistent memory. Use source='user' for user habits/preferences (permanent), source='agent' for agent decisions/notes. DO NOT memorize code structure or file contents that can be re-read from the project.",
+            "description": "Save a fact to persistent memory (title, content, optional tags).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string"},
                     "content": {"type": "string"},
-                    "tags": {"type": "string"},
-                    "source": {"type": "string", "enum": ["agent", "user", "shared"]}
+                    "tags": {"type": "string", "description": "Comma-separated tags"}
                 },
                 "required": ["title", "content"]
             }
@@ -702,25 +285,38 @@ BUILTIN_TOOLS = [
             "description": "Search memory files for a query string.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "query": {"type": "string"}
-                },
+                "properties": {"query": {"type": "string"}},
                 "required": ["query"]
             }
         }
     },
+    # ── External Tools ──
     {
         "type": "function",
         "function": {
-            "name": "delete_memory",
-            "description": "Delete a memory by its slug name.",
+            "name": "connect_mcp",
+            "description": "Connect to an MCP server to access its tools (e.g. docs, deploy).",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "name": {"type": "string"}
-                },
+                "properties": {"name": {"type": "string"}},
                 "required": ["name"]
             }
         }
-    }
+    },
+    # ── Layer 3: Python Code Execution ──
+    {
+        "type": "function",
+        "function": {
+            "name": "python",
+            "description": "Execute a Python script in ONE call. Use for multi-step logic: loops, data processing, batch file ops, API calls. Avoids N roundtrips for sequential operations. Script runs in the project directory with access to all installed packages.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "Python source code to execute"},
+                    "timeout": {"type": "integer", "description": "Max seconds (default 30)"}
+                },
+                "required": ["script"]
+            }
+        }
+    },
 ]

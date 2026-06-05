@@ -18,11 +18,11 @@ def render_bash_result(command: str, output: str, exit_code: int = 0) -> str:
     # Strip raw ANSI escape sequences
     clean = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', output)
 
-    # Truncate very large outputs
-    if len(clean) > 10000:
+    # Truncate extremely large outputs (collapse handled by render_tool_output)
+    if len(clean) > 100000:
         lines = clean.count('\n') + 1
         chars = len(clean)
-        clean = f"[{lines} lines, {chars} chars]\n{clean[:3000]}\n... (output truncated)"
+        clean = f"[{lines} lines, {chars} chars]\n{clean[:20000]}\n... (output truncated)"
 
     status = "[OK]" if exit_code == 0 else f"[EXIT:{exit_code}]"
     return f"```bash\n$ {command}\n{status}\n{clean}\n```"

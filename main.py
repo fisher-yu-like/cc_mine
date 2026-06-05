@@ -546,6 +546,10 @@ def main(argv: list[str] | None = None):
         # Keep CLI commands in sync with current state
         cli_commands.set_shared_state(history, context, config.WORKDIR, _auto_session_id)
 
+        # ── Visual separator before input ──
+        from terminal_renderer import get_console
+        get_console().print("─" * min(get_console().width, 100), style="dim")
+
         query = read_input()
         if query is None:
             break

@@ -36,10 +36,10 @@ def run_bash(command: str, cwd: Path = None,
             TOOL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         output_path.write_text(raw, encoding="utf-8", errors="replace")
 
-        # Return preview + file path hint
-        rendered = render_bash_result(command, raw[:3000], r.returncode)
+        # Return full output — collapse/truncation is handled by render_tool_output
+        rendered = render_bash_result(command, raw, r.returncode)
         total_lines = raw.count('\n') + 1
-        if len(raw) > 3000 or total_lines > 20:
+        if len(raw) > 50000 or total_lines > 500:
             rendered += f"\n\033[90m[file: {output_path}]\033[0m"
         return rendered
     except subprocess.TimeoutExpired:
